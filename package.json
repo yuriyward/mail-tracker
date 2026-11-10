@@ -1,0 +1,35 @@
+{
+  "name": "mail-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "oxlint --type-aware --deny-warnings",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "fix": "oxlint --type-aware --fix && oxfmt --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --pass-with-no-tests",
+    "dup": "jscpd src mailspring-plugin/src --threshold 0 --min-lines 5 --min-tokens 80 --ignore '**/__tests__/**,**/*.d.ts'",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run dup && bun run build:plugin",
+    "build:plugin": "bun build mailspring-plugin/src/main.ts --outfile mailspring-plugin/lib/main.js --target node --format cjs --external mailspring-exports",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "4.13.17",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "21.0.4",
+    "@types/bun": "1.4.1",
+    "jscpd": "5.3.0",
+    "oxfmt": "0.66.0",
+    "oxlint": "1.81.0",
+    "oxlint-plugin-complexity": "2.1.8",
+    "oxlint-tsgolint": "7.0.2001",
+    "typescript": "7.0.2",
+    "ultracite": "7.10.8",
+    "wrangler": "4.160.0"
+  }
+}

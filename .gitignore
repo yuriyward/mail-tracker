@@ -1,0 +1,11 @@
+node_modules/
+.tmp/
+exports/
+state/
+.env
+.env.*
+!.env.example
+*.log
+mailspring-plugin/lib/
+.wrangler/
+.dev.vars

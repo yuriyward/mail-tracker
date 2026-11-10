@@ -1,0 +1,16 @@
+{
+  "name": "mail-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Adds open and click tracking through your own mail-tracker Worker when you send.",
+  "license": "MIT",
+  "main": "./lib/main.js",
+  "engines": {
+    "mailspring": "*"
+  },
+  "windowTypes": {
+    "default": true,
+    "composer": true,
+    "thread-popout": true
+  }
+}

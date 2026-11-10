@@ -1,0 +1,28 @@
+name = "mail-tracker"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+workers_dev = false
+
+# Serve on a subdomain of your zone, then put a Cloudflare Access application in front of
+# /app only. Replace the placeholder with your own host.
+# routes = [{ pattern = "track.example.com", custom_domain = true }]
+
+[vars]
+# Cloudflare Access team domain and the Access application's AUD tag (both not secret).
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
+# Optional: comma-separated IPs whose hits are classed as your own.
+SELF_IPS = ""
+# Optional: comma-separated emails allowed through Access (checked on the token's email claim).
+ALLOWED_EMAILS = ""
+
+# Created once with: bunx wrangler d1 create mail-tracker --jurisdiction eu
+# then paste the printed database_id here.
+[[d1_databases]]
+binding = "DB"
+database_name = "mail-tracker"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# Secrets (not here): bunx wrangler secret put API_TOKEN       (write, for the plugin)
+#                    bunx wrangler secret put API_READ_TOKEN  (read-only, for the agent)
