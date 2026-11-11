@@ -246,7 +246,7 @@ const facet = (
 
 export const TIMELINE_COLUMNS = {
   at: moment<TimelineEvent>("at", (e) => e.at),
-  class: facet("class", (e) => e.class),
+  class: facet("class", (e) => e.label),
   kind: facet("kind", (e) => e.kind),
 };
 

@@ -14,12 +14,67 @@ export const EVENT_CLASSES = [
 ] as const;
 export type EventClass = (typeof EVENT_CLASSES)[number];
 
-export const CLASS_LABELS: Record<EventClass, string> = {
-  human: "probable human",
-  proxy: "proxy or prefetch",
-  scanner: "scanner",
-  self: "self",
-  unknown: "unknown",
+/**
+ * What the dashboard calls an event. The stored class 'proxy' splits by its stored reason:
+ * an on-open image proxy fetches when the recipient opens the email, so it reads as an open
+ * ("Opened", via its client); everything else in 'proxy' is a prefetch.
+ */
+export const EVENT_LABELS = [
+  "Opened",
+  "Clicked",
+  "Prefetch",
+  "Scanner",
+  "You",
+  "Unknown",
+] as const;
+export type EventLabel = (typeof EVENT_LABELS)[number];
+
+/** Labels shown like a recipient's own action; the rest are muted. */
+export const ACTION_LABELS: ReadonlySet<EventLabel> = new Set([
+  "Opened",
+  "Clicked",
+]);
+
+/** Every on-open proxy reason starts with this (PROXY_RULES below). */
+const ON_OPEN_PREFIX = "on-open image proxy";
+
+/** The mail client behind an on-open proxy, from the stored reason. */
+const PROXY_CLIENTS: readonly [RegExp, string][] = [
+  [/googleimageproxy|ggpht\.com|\bGoogle\b/iu, "Gmail"],
+  [/yahoomailproxy/iu, "Yahoo Mail"],
+  [/outlook-imageproxy/iu, "Outlook"],
+];
+
+export interface EventDisplay {
+  label: EventLabel;
+  /** The client of an on-open proxy ("Gmail"), else null. */
+  via: string | null;
+}
+
+/** The label of each stored class but 'proxy', which splits by reason. */
+const FIXED_LABELS: Record<
+  Exclude<EventClass, "human" | "proxy">,
+  EventLabel
+> = { scanner: "Scanner", self: "You", unknown: "Unknown" };
+
+/** The plain label of a stored event (class, kind and reason are as stored). */
+export const eventDisplay = (e: {
+  class: EventClass;
+  kind: "open" | "click";
+  reason: string;
+}): EventDisplay => {
+  const action: EventLabel = e.kind === "open" ? "Opened" : "Clicked";
+  if (e.class === "human") {
+    return { label: action, via: null };
+  }
+  if (e.class !== "proxy") {
+    return { label: FIXED_LABELS[e.class], via: null };
+  }
+  if (!e.reason.startsWith(ON_OPEN_PREFIX)) {
+    return { label: "Prefetch", via: null };
+  }
+  const client = PROXY_CLIENTS.find(([pattern]) => pattern.test(e.reason));
+  return { label: action, via: client ? client[1] : "image proxy" };
 };
 
 export interface Hit {
@@ -128,10 +183,10 @@ const SCANNER_RULES: Rule[] = [
 const PROXY_RULES: Rule[] = [
   (h) => {
     const match = ON_OPEN_PROXY_UA.exec(h.userAgent);
-    return match ? counts(`on-open image proxy (${match[0]})`) : null;
+    return match ? counts(`${ON_OPEN_PREFIX} (${match[0]})`) : null;
   },
   fromNetwork("on-open", (n) =>
-    counts(`on-open image proxy: IP in the ${n.name}`)
+    counts(`${ON_OPEN_PREFIX}: IP in the ${n.name}`)
   ),
   fromNetwork("prefetch", (n) => hidden(`prefetch: IP in the ${n.name}`)),
   (h) =>

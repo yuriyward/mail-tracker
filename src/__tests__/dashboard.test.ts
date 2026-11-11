@@ -259,6 +259,16 @@ describe("per-email totals", () => {
       ["click", "human", false],
       ["click", "scanner", false],
     ]);
+    // The read API's display labels: Gmail's proxy reads as an open via Gmail.
+    expect(data.timeline.map((e) => [e.label, e.via])).toEqual([
+      ["Prefetch", null],
+      ["Opened", null],
+      ["Opened", null],
+      ["Opened", "Gmail"],
+      ["Clicked", null],
+      ["Clicked", null],
+      ["Scanner", null],
+    ]);
     expect(data.timeline[4]?.url).toBe("https://example.org/a");
     expect(data.timeline[0]?.url).toBeNull();
     expect(data.message).toEqual({

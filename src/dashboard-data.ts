@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 
-import { EVENT_CLASSES } from "./classify";
+import { EVENT_CLASSES, EVENT_LABELS, eventDisplay } from "./classify";
 import { linkName } from "./link-names";
 import {
   NO_REOPENS,
@@ -128,6 +128,8 @@ const timelineEventSchema = z.object({
   hint: z.string().nullable(),
   id: z.number(),
   kind: z.enum(["open", "click"]),
+  /** The plain label shown for the event (src/classify.ts eventDisplay). */
+  label: z.enum(EVENT_LABELS),
   /** The clicked link's name (its text, else its domain); null for opens. */
   linkName: z.string().nullable(),
   network: z.string(),
@@ -139,6 +141,8 @@ const timelineEventSchema = z.object({
   /** The clicked link's destination; null for opens. */
   url: z.string().nullable(),
   userAgent: z.string(),
+  /** The client of an on-open image proxy ("Gmail"); null otherwise. */
+  via: z.string().nullable(),
 });
 export type TimelineEvent = z.infer<typeof timelineEventSchema>;
 
@@ -370,6 +374,7 @@ export const timelineEvent = (
     hint: hints.get(e.id) ?? null,
     id: e.id,
     kind: e.kind,
+    ...eventDisplay(e),
     linkName: link ? linkName(link.url, link.text) : null,
     network: e.as_organization,
     reason: e.reason,

@@ -16,8 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { CLASS_LABELS, EVENT_CLASSES } from "../../../src/classify";
-import type { EventClass } from "../../../src/classify";
+import { ACTION_LABELS, EVENT_LABELS } from "../../../src/classify";
 import { detailDataSchema, recipientLabel } from "../../../src/dashboard-data";
 import type {
   DetailData,
@@ -40,14 +39,6 @@ import {
 } from "../lib/tables";
 import { Summary } from "../summary";
 import { FilteredTable, sortHeader } from "../table-parts";
-
-const CLASS_BADGE: Record<EventClass, "default" | "secondary" | "outline"> = {
-  human: "default",
-  proxy: "secondary",
-  scanner: "outline",
-  self: "outline",
-  unknown: "outline",
-};
 
 /** The per-email figures in one compact row. */
 const TotalsRow = ({ totals }: { totals: Totals }) => {
@@ -159,10 +150,7 @@ const Recipients = ({ recipients }: { recipients: RecipientTotals[] }) => {
 const clientOf = (e: TimelineEvent): string =>
   [e.userAgent, e.network, e.country].filter((part) => part !== "").join(" · ");
 
-const CLASS_OPTIONS = EVENT_CLASSES.map((value) => ({
-  label: CLASS_LABELS[value],
-  value,
-}));
+const LABEL_OPTIONS = EVENT_LABELS.map((value) => ({ label: value, value }));
 
 /** A cell cut to 40 characters, its whole text in a tooltip; none when `label` is empty. */
 const Truncated = ({
@@ -213,9 +201,20 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
     ...TIMELINE_COLUMNS.class,
     cell: ({ row }) => (
       <span className="flex items-center gap-2">
-        <Badge variant={CLASS_BADGE[row.original.class]}>
-          {CLASS_LABELS[row.original.class]}
-        </Badge>
+        <Hint label={row.original.reason}>
+          <Badge
+            variant={
+              ACTION_LABELS.has(row.original.label) ? "default" : "ghost"
+            }
+          >
+            {row.original.label}
+          </Badge>
+        </Hint>
+        {row.original.via !== null && (
+          <span className="type-meta text-muted-foreground whitespace-nowrap">
+            via {row.original.via}
+          </span>
+        )}
         {row.original.duplicate && <Badge variant="ghost">repeat</Badge>}
         {row.original.reopen && <Badge variant="highlight">re-open</Badge>}
         {row.original.hint !== null && (
@@ -294,7 +293,7 @@ const Timeline = ({ events }: { events: TimelineEvent[] }) => {
           {eventClass && (
             <DataTableFacetedFilter
               column={eventClass}
-              options={CLASS_OPTIONS}
+              options={LABEL_OPTIONS}
               title="Class"
             />
           )}

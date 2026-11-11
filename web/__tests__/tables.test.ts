@@ -273,6 +273,7 @@ const event = (id: number, e: Partial<TimelineEvent>): TimelineEvent => ({
   hint: null,
   id,
   kind: "open",
+  label: "Opened",
   linkName: null,
   network: "",
   reason: "synthetic",
@@ -280,15 +281,26 @@ const event = (id: number, e: Partial<TimelineEvent>): TimelineEvent => ({
   reopen: false,
   url: null,
   userAgent: "",
+  via: null,
   ...e,
 });
 
 const EVENTS = [
-  event(1, { class: "proxy" }),
-  event(2, { class: "scanner", kind: "click", url: "https://example.test/a" }),
-  event(3, { class: "human" }),
-  event(4, { class: "human", kind: "click", url: "https://example.test/b" }),
-  event(5, { class: "self" }),
+  event(1, { class: "proxy", label: "Prefetch" }),
+  event(2, {
+    class: "scanner",
+    kind: "click",
+    label: "Scanner",
+    url: "https://example.test/a",
+  }),
+  event(3, { class: "proxy", label: "Opened", via: "Gmail" }),
+  event(4, {
+    class: "human",
+    kind: "click",
+    label: "Clicked",
+    url: "https://example.test/b",
+  }),
+  event(5, { class: "self", label: "You" }),
 ];
 
 const eventIds = (view: View): number[] =>
@@ -304,18 +316,18 @@ describe("timeline", () => {
     ]);
   });
 
-  test("filters by kind and by class, together", () => {
+  test("filters by kind and by label, together", () => {
     expect(eventIds({ filters: [{ id: "kind", value: ["click"] }] })).toEqual([
       2, 4,
     ]);
     expect(
-      eventIds({ filters: [{ id: "class", value: ["human", "self"] }] })
-    ).toEqual([3, 4, 5]);
+      eventIds({ filters: [{ id: "class", value: ["Opened", "You"] }] })
+    ).toEqual([3, 5]);
     expect(
       eventIds({
         filters: [
           { id: "kind", value: ["open"] },
-          { id: "class", value: ["human"] },
+          { id: "class", value: ["Opened", "Clicked"] },
         ],
       })
     ).toEqual([3]);
@@ -327,15 +339,16 @@ describe("timeline", () => {
     ]);
   });
 
-  test("counts each class for the filter menu", () => {
+  test("counts each label for the filter menu", () => {
     const counts = tableOf(EVENTS, TIMELINE_COLUMNS, {})
       .getColumn("class")
       ?.getFacetedUniqueValues();
     expect(Object.fromEntries(counts ?? [])).toEqual({
-      human: 2,
-      proxy: 1,
-      scanner: 1,
-      self: 1,
+      Clicked: 1,
+      Opened: 1,
+      Prefetch: 1,
+      Scanner: 1,
+      You: 1,
     });
   });
 });
