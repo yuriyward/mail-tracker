@@ -172,19 +172,19 @@ describe("bun run compose", () => {
   test("Markdown keeps the lines as written: a newline is a line break in both parts", async () => {
     // The live body from 2026-11-12 that rendered its two lines as one.
     const body =
-      "Calendar: [my calendar](https://cal.com/babyak)\nBare link: https://littlebit.dev";
+      "Calendar: [my calendar](https://cal.com/example)\nBare link: https://example.com";
     const { html, receipt, text } = await composeWith(h, {
       body,
       markdown: true,
     });
     const [calendar, bare] = receipt.links.map((link) => link.redirectUrl);
     expect(html).toContain(
-      `<p>Calendar: <a href="${calendar ?? ""}">my calendar</a><br>\nBare link: <a href="${bare ?? ""}">https://littlebit.dev</a></p>`
+      `<p>Calendar: <a href="${calendar ?? ""}">my calendar</a><br>\nBare link: <a href="${bare ?? ""}">https://example.com</a></p>`
     );
     expect(text).toBe(
       [
-        "Calendar: my calendar (https://cal.com/babyak)",
-        "Bare link: https://littlebit.dev",
+        "Calendar: my calendar (https://cal.com/example)",
+        "Bare link: https://example.com",
         "",
       ].join("\n")
     );
