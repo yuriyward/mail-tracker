@@ -22,6 +22,7 @@ import type { Client } from "./client";
 import { registerDom } from "./dom";
 import {
   bodyToHtml,
+  bodyToText,
   fillTemplate,
   htmlToText,
   isDocument,
@@ -122,6 +123,19 @@ const register = async (
 };
 
 /**
+ * The plain-text alternative: the template's text (signature links with their
+ * destinations) with the body's lines in its slot, exactly as written (ADR-0004).
+ */
+const composeText = (options: ComposeOptions): string => {
+  const marker = `mail-tracker-body-${crypto.randomUUID()}`;
+  const doc = parseHtml(fillTemplate(options.template, `<p>${marker}</p>`));
+  autolink(doc.body);
+  return htmlToText(doc.body)
+    .split(marker)
+    .join(bodyToText(options.body, options.markdown));
+};
+
+/**
  * Renders the email and, unless `track` is off, registers it and applies its token set
  * with the plugin's own code, so a composed draft is tracked exactly like a Mailspring one.
  */
@@ -139,7 +153,7 @@ export const compose = async (
   const doc = parseHtml(filled);
   // Bare https URLs become links, as the plugin does, so their clicks are tracked too.
   autolink(doc.body);
-  const text = htmlToText(doc.body);
+  const text = composeText(options);
   const base = {
     bcc: options.bcc,
     cc: options.cc,

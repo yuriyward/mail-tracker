@@ -169,6 +169,72 @@ describe("bun run compose", () => {
     expect(text).toContain("the deck (https://example.org/deck)");
   });
 
+  test("Markdown keeps the lines as written: a newline is a line break in both parts", async () => {
+    // The live body from 2026-11-12 that rendered its two lines as one.
+    const body =
+      "Calendar: [my calendar](https://cal.com/babyak)\nBare link: https://littlebit.dev";
+    const { html, receipt, text } = await composeWith(h, {
+      body,
+      markdown: true,
+    });
+    const [calendar, bare] = receipt.links.map((link) => link.redirectUrl);
+    expect(html).toContain(
+      `<p>Calendar: <a href="${calendar ?? ""}">my calendar</a><br>\nBare link: <a href="${bare ?? ""}">https://littlebit.dev</a></p>`
+    );
+    expect(text).toBe(
+      [
+        "Calendar: my calendar (https://cal.com/babyak)",
+        "Bare link: https://littlebit.dev",
+        "",
+      ].join("\n")
+    );
+  });
+
+  test("Markdown breaks mode: paragraphs, lists, emphasis and code still work", async () => {
+    const body = [
+      "Hi *Alex*,",
+      "see **this**",
+      "",
+      "- one",
+      "  more",
+      "- two",
+      "",
+      "```",
+      "a [x](https://example.org/x)",
+      "b",
+      "```",
+      "",
+      "`[y](https://example.org/y)` and [z](https://example.org/z)",
+    ].join("\n");
+    const { html, text } = await composeWith(h, { body, markdown: true });
+    expect(html).toContain(
+      "<p>Hi <em>Alex</em>,<br>\nsee <strong>this</strong></p>"
+    );
+    expect(html).toContain("<li>one<br>\nmore</li>\n<li>two</li>");
+    expect(html).toContain(
+      "<pre><code>a [x](https://example.org/x)\nb\n</code></pre>"
+    );
+    expect(html).not.toContain("</li><br>");
+    expect(text).toStartWith(
+      [
+        "Hi *Alex*,",
+        "see **this**",
+        "",
+        "- one",
+        "  more",
+        "- two",
+        "",
+        "```",
+        "a [x](https://example.org/x)",
+        "b",
+        "```",
+        "",
+        "`[y](https://example.org/y)` and z (https://example.org/z)",
+        "",
+      ].join("\n")
+    );
+  });
+
   test("the template's {{body}} slot holds the body; its signature links are tracked too", async () => {
     const template = [
       "<!doctype html><html><head><style>p { margin: 0 }</style></head><body>",

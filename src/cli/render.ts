@@ -13,6 +13,29 @@ const escapeHtml = (text: string): string =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+const BLOCKS = new Set([
+  "ARTICLE",
+  "BLOCKQUOTE",
+  "DIV",
+  "FOOTER",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "HEADER",
+  "HR",
+  "OL",
+  "P",
+  "PRE",
+  "SECTION",
+  "TABLE",
+  "TR",
+  "UL",
+]);
+const SKIPPED = new Set(["HEAD", "IMG", "SCRIPT", "STYLE", "TITLE"]);
+
 /** Plain text: paragraphs at blank lines, line breaks kept. */
 const plainToHtml = (text: string): string =>
   text
@@ -24,15 +47,123 @@ const plainToHtml = (text: string): string =>
     )
     .join("\n");
 
+/** Elements a soft break next to them separates, so it stays a plain newline. */
+const BREAK_BOUNDARIES = new Set(["BR", "LI", "TBODY", "THEAD", "TD", "TH"]);
+
+const isInline = (node: Node | null): boolean => {
+  if (node === null) {
+    return false;
+  }
+  if (node.nodeType === Node.TEXT_NODE) {
+    return /\S/u.test(node.textContent ?? "");
+  }
+  if (!(node instanceof Element)) {
+    return false;
+  }
+  const tag = node.tagName.toUpperCase();
+  return !BLOCKS.has(tag) && !BREAK_BOUNDARIES.has(tag);
+};
+
+/** A text node's newlines as `<br>` where text runs on both sides of them. */
+const breakLines = (node: Text, doc: Document): void => {
+  const [first = "", ...rest] = (node.textContent ?? "").split("\n");
+  const parts: Node[] = [doc.createTextNode(first)];
+  let before = /\S/u.test(first) || isInline(node.previousSibling);
+  for (const [index, line] of rest.entries()) {
+    const after =
+      /\S/u.test(rest.slice(index).join("")) || isInline(node.nextSibling);
+    if (before && after) {
+      parts.push(doc.createElement("br"));
+    }
+    parts.push(doc.createTextNode(`\n${line}`));
+    before ||= /\S/u.test(line);
+  }
+  node.replaceWith(...parts);
+};
+
+/**
+ * Markdown "breaks" mode: every soft line break (a newline inside a paragraph, list item
+ * or heading) becomes `<br>`, so the email keeps the lines as the agent wrote them. Code
+ * blocks and the newlines between blocks are left alone.
+ */
+const softBreaksToBr = (html: string): string => {
+  const doc = new DOMParser().parseFromString(
+    `<!doctype html><html><body>${html}</body></html>`,
+    "text/html"
+  );
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const texts: Text[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const multiline = (node.textContent ?? "").includes("\n");
+    if (
+      multiline &&
+      node instanceof Text &&
+      node.parentElement?.closest("pre") === null
+    ) {
+      texts.push(node);
+    }
+  }
+  for (const node of texts) {
+    breakLines(node, doc);
+  }
+  return `${doc.body.innerHTML}\n`;
+};
+
 /**
  * The body as HTML. Markdown goes through Bun's parser with the GFM tag filter, so raw
- * `<script>`, `<style>` or `<iframe>` in it is shown as text; bare URLs are left for
- * the plugin's autolinker, which knows the redirect allow-list.
+ * `<script>`, `<style>` or `<iframe>` in it is shown as text, then in "breaks" mode: a
+ * single newline is a line break, a blank line a paragraph. Bare URLs are left for the
+ * plugin's autolinker, which knows the redirect allow-list.
  */
 export const bodyToHtml = (source: string, markdown: boolean): string =>
   markdown
-    ? Bun.markdown.html(source, { tagFilter: true })
+    ? softBreaksToBr(Bun.markdown.html(source, { tagFilter: true }))
     : plainToHtml(source);
+
+/** `[text](url)` (not an image) and its destination, optionally in `<…>` or titled. */
+const INLINE_LINK =
+  /(?<!!)\[(?<text>[^\]\n]*)\]\(\s*<?(?<url>[^\s()<>]+)>?(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\s*\)/gu;
+
+const plainLinks = (line: string): string =>
+  line
+    .split(/(?<code>`+[^`\n]*?`+)/u)
+    .map((part, index) =>
+      index % 2 === 1
+        ? part
+        : part.replaceAll(INLINE_LINK, (_match, text: string, url: string) =>
+            text.trim() === "" || text.trim() === url ? url : `${text} (${url})`
+          )
+    )
+    .join("");
+
+/**
+ * The body's lines for the plain-text alternative, exactly as written: in Markdown only
+ * `[text](url)` becomes `text (url)` (code is left as it is).
+ */
+export const bodyToText = (source: string, markdown: boolean): string => {
+  const lines = source.replaceAll("\r\n", "\n").trim().split("\n");
+  if (!markdown) {
+    return lines.join("\n");
+  }
+  let fence: string | null = null;
+  return lines
+    .map((line) => {
+      const marker = /^ {0,3}(?<fence>`{3,}|~{3,})/u.exec(line)?.groups?.fence;
+      if (fence !== null) {
+        // A closing fence: the same character, at least as many of it.
+        if (marker?.startsWith(fence) === true) {
+          fence = null;
+        }
+        return line;
+      }
+      if (marker !== undefined) {
+        fence = marker;
+        return line;
+      }
+      return plainLinks(line);
+    })
+    .join("\n");
+};
 
 /** Puts the body into the template's one `{{body}}` slot. */
 export const fillTemplate = (template: string, body: string): string => {
@@ -56,29 +187,6 @@ export const serialise = (doc: Document, whole: boolean): string =>
   whole
     ? `<!doctype html>\n${doc.documentElement.outerHTML}\n`
     : `${doc.body.innerHTML}\n`;
-
-const BLOCKS = new Set([
-  "ARTICLE",
-  "BLOCKQUOTE",
-  "DIV",
-  "FOOTER",
-  "H1",
-  "H2",
-  "H3",
-  "H4",
-  "H5",
-  "H6",
-  "HEADER",
-  "HR",
-  "OL",
-  "P",
-  "PRE",
-  "SECTION",
-  "TABLE",
-  "TR",
-  "UL",
-]);
-const SKIPPED = new Set(["HEAD", "IMG", "SCRIPT", "STYLE", "TITLE"]);
 
 /** A link's destination, when it says more than the link's own text. */
 const linkSuffix = (anchor: Element): string => {
