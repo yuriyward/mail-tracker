@@ -1,6 +1,7 @@
 import type { Message } from "mailspring-exports";
 import { z } from "zod";
 
+import { autolink } from "./autolink";
 import { lookup, pending, save, setPending } from "./registry";
 import type { ConfigStore, PendingSent, Registration } from "./registry";
 import { skipReason, trackerOrigin } from "./settings";
@@ -115,7 +116,10 @@ export const createTracker = (deps: TrackerDeps) => {
     ) {
       return;
     }
-    const current = snapshot(draft, parseBody(draft.body ?? ""), origin);
+    const root = parseBody(draft.body ?? "");
+    // The same autolinking as at send time, so bare URLs are registered too.
+    autolink(root);
+    const current = snapshot(draft, root, origin);
     const print = fingerprint(current);
     if (lookup(deps.config, draftId)?.fingerprint === print) {
       return;

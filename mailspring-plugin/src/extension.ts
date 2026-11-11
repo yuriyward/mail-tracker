@@ -4,6 +4,7 @@ import type {
   SendTransformArgs,
 } from "mailspring-exports";
 
+import { autolink } from "./autolink";
 import { lookup } from "./registry";
 import type { ConfigStore, Registration } from "./registry";
 import { applyRegistration } from "./rewrite";
@@ -103,6 +104,8 @@ export const createExtension = (
         if (!tracked) {
           return;
         }
+        // Bare URLs become links first, as when registering, so their clicks are tracked.
+        autolink(draftBodyRootNode);
         warnIfStale(draft, draftBodyRootNode, tracked.entry, tracked.origin);
         applyRegistration(draftBodyRootNode, tracked.entry, tracked.origin);
       } catch (error) {

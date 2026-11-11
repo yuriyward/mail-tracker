@@ -99,6 +99,27 @@ describe("send through Mailspring's synchronous caller", () => {
     expect(hrefs(html)).toContain("https://example.org/late");
   });
 
+  test("a bare URL typed as text is registered and tracked; the Sent copy keeps the text", async () => {
+    const typed = draft({
+      body: "<p>Slides: https://example.org/slides.</p><blockquote>https://example.org/old</blockquote>",
+    });
+    await f.compose(typed);
+    const entry = lookup(f.config, DRAFT_ID);
+    expect(Object.keys(entry?.links ?? {})).toEqual([
+      "https://example.org/slides",
+    ]);
+    const task = f.send(typed);
+    const html = task.perRecipientBodies?.["alex@example.com"] ?? "";
+    const redirect = entry?.links["https://example.org/slides"] ?? "";
+    expect(redirect).toStartWith(`${ORIGIN}/l/`);
+    expect(html).toContain(
+      `<a href="${redirect}">https://example.org/slides</a>.`
+    );
+    expect(html).toContain("<blockquote>https://example.org/old</blockquote>");
+    expect(task.perRecipientBodies?.self).toBe(typed.body ?? "");
+    expect(f.logs).toEqual([]);
+  });
+
   test("warns once when the registration does not match the draft as sent", async () => {
     await f.compose();
     f.send(
