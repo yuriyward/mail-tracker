@@ -18,7 +18,7 @@ export const createApp = (options: AppOptions = {}) => {
   const jwks = limitRefresh(options.jwks ?? fetchAccessJwks, now);
   app.route("/", trackRoutes(now, jwks));
   app.route("/api", apiRoutes(now));
-  app.route("/app", dashboardRoutes(jwks));
+  app.route("/app", dashboardRoutes(now, jwks));
   app.notFound((c) => c.text("Not found", 404));
   return app;
 };

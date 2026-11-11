@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
 import { Jwt } from "hono/utils/jwt";
+import { z } from "zod";
 
 import { FORCED_REFRESH_MS } from "../auth";
+import { CSP, REFRESH_MS } from "../dashboard";
 import {
   API_TOKEN,
   AUD,
@@ -151,5 +153,124 @@ describe("dashboard", () => {
     expect(detailHtml).toContain("proxy or prefetch");
     expect(detailHtml).toContain("probable human");
     expect(detailHtml).toContain("click https://example.org/a");
+  });
+});
+
+const rowCount = (rows: string): number => rows.match(/<tr>/gu)?.length ?? 0;
+
+describe("dashboard auto-refresh", () => {
+  const refreshRoutes = [
+    "/app/refresh.js",
+    "/app/data",
+    `/app/messages/${UNKNOWN_TOKEN}/data`,
+  ];
+  const refreshed = z.object({ rows: z.string(), updated: z.string() });
+
+  const owner = async () => ({
+    "Cf-Access-Jwt-Assertion": await h.accessJwt(),
+  });
+  const text = async (route: string): Promise<string> => {
+    const response = await h.call(route, { headers: await owner() });
+    return await response.text();
+  };
+  const data = async (route: string) => {
+    const response = await h.call(route, { headers: await owner() });
+    return refreshed.parse(await response.json());
+  };
+
+  test.each(refreshRoutes)(
+    "refuses %s without an Access assertion",
+    async (route) => {
+      const response = await h.call(route);
+      expect(response.status).toBe(401);
+    }
+  );
+
+  test.each(refreshRoutes)("refuses %s with the API token", async (route) => {
+    const response = await h.call(route, {
+      headers: { Authorization: `Bearer ${API_TOKEN}` },
+    });
+    expect(response.status).toBe(401);
+  });
+
+  test("refuses the data endpoint with a wrong-audience assertion", async () => {
+    const jwt = await h.accessJwt({ aud: "other" });
+    expect(await status(jwt, "/app/data")).toBe(401);
+  });
+
+  test("every /app response carries the strict CSP", async () => {
+    const result = await h.mintOk();
+    await h.markSent(result.token);
+    const headers = await owner();
+    const responses = await Promise.all(
+      [
+        "/app",
+        `/app/messages/${result.token}`,
+        "/app/data",
+        `/app/messages/${result.token}/data`,
+        "/app/refresh.js",
+      ].map(async (route) => await h.call(route, { headers }))
+    );
+    for (const response of responses) {
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      const csp = response.headers.get("Content-Security-Policy") ?? "";
+      expect(csp).toBe(CSP);
+      expect(csp).toContain("default-src 'none'");
+      expect(csp).toContain("script-src 'self'");
+      expect(csp).toContain("connect-src 'self'");
+      expect(csp).not.toContain("unsafe-eval");
+      expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/u);
+    }
+  });
+
+  test("pages load only the same-origin script, no inline script or meta refresh", async () => {
+    const result = await h.mintOk();
+    await h.markSent(result.token);
+    const listHtml = await text("/app");
+    expect(listHtml.match(/<script\b[^>]*>/gu)).toEqual([
+      '<script src="/app/refresh.js" defer>',
+    ]);
+    expect(listHtml).toContain('data-refresh="/app/data"');
+    expect(listHtml).toContain('id="updated"');
+    expect(listHtml).not.toContain("http-equiv");
+    const detailHtml = await text(`/app/messages/${result.token}`);
+    expect(detailHtml).toContain(
+      `data-refresh="/app/messages/${result.token}/data"`
+    );
+
+    const script = await h.call("/app/refresh.js", { headers: await owner() });
+    expect(script.headers.get("Content-Type")).toContain("text/javascript");
+    expect(script.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    const source = await script.text();
+    expect(source).toContain(String(REFRESH_MS));
+    expect(source).toContain("visibilitychange");
+  });
+
+  test("the data endpoints return fresh, escaped rows and the time", async () => {
+    const result = await h.mintOk();
+    await h.markSent(result.token);
+    h.db.sqlite.run("UPDATE messages SET subject = '<script>x</script>'");
+    h.state.clock += HOUR;
+    await h.hit(result.imageUrl, { "User-Agent": "Mozilla/5.0" });
+
+    const list = await data("/app/data");
+    expect(rowCount(list.rows)).toBe(1);
+    expect(list.rows).toContain("&lt;script&gt;");
+    expect(list.rows).not.toContain("<script>");
+    const clock = new Date(h.state.clock).toISOString().slice(11, 19);
+    expect(list.updated).toBe(`${clock} UTC`);
+
+    const route = `/app/messages/${result.token}/data`;
+    const before = await data(route);
+    await h.hit(result.links[0]?.redirectUrl);
+    const after = await data(route);
+    expect(rowCount(after.rows)).toBe(rowCount(before.rows) + 1);
+    expect(after.rows).toContain("click https://example.org/a");
+
+    const missing = await h.call(`/app/messages/${UNKNOWN_TOKEN}/data`, {
+      headers: await owner(),
+    });
+    expect(missing.status).toBe(404);
   });
 });
