@@ -78,6 +78,21 @@ export interface Claims {
   iss?: string;
 }
 
+/** An execution context that collects `waitUntil` work, so callers can wait for it. */
+const backgroundWork = () => {
+  const pending: Promise<unknown>[] = [];
+  const executionCtx = {
+    passThroughOnException: () => {
+      // Not used by the Worker.
+    },
+    props: {},
+    waitUntil: (promise: Promise<unknown>) => {
+      pending.push(promise);
+    },
+  };
+  return { executionCtx, pending };
+};
+
 /** One isolated Worker with an in-memory D1, a settable clock and Access keys. */
 export const createHarness = async () => {
   const keys = await keyPair(KID);
@@ -118,15 +133,16 @@ export const createHarness = async () => {
     return refresh ? state.rotated : state.jwks;
   };
   const app = createApp({ jwks: source, now: () => state.clock });
-  const pending: Promise<unknown>[] = [];
-  const executionCtx = {
-    passThroughOnException: () => {
-      // Not used by the Worker.
-    },
-    props: {},
-    waitUntil: (promise: Promise<unknown>) => {
-      pending.push(promise);
-    },
+  const { executionCtx, pending } = backgroundWork();
+
+  /**
+   * Answers a request as the deployed Worker would, at the request's own origin (also for
+   * a local server standing in for the Worker), and waits for its background work.
+   */
+  const handle = async (request: Request): Promise<Response> => {
+    const response = await app.request(request, undefined, env, executionCtx);
+    await Promise.all(pending.splice(0));
+    return response;
   };
 
   /**
@@ -142,9 +158,7 @@ export const createHarness = async () => {
     if (cf) {
       Object.defineProperty(request, "cf", { value: cf });
     }
-    const response = await app.request(request, undefined, env, executionCtx);
-    await Promise.all(pending.splice(0));
-    return response;
+    return await handle(request);
   };
 
   const mint = async (body: string, token = API_TOKEN): Promise<Response> =>
@@ -243,6 +257,7 @@ export const createHarness = async () => {
     db,
     env,
     events,
+    handle,
     hit,
     keyPair,
     markSent,

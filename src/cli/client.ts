@@ -62,10 +62,17 @@ export const createClient = (options: {
     ),
 });
 
+const LOOPBACK = new Set(["127.0.0.1", "[::1]", "localhost"]);
+
+/** https, or plain http on this machine only (a local Worker, as in `wrangler dev`). */
+const allowed = (url: URL): boolean =>
+  url.protocol === "https:" ||
+  (url.protocol === "http:" && LOOPBACK.has(url.hostname));
+
 /** The Worker's origin from a setting, or an error naming what is wrong. */
 export const workerOrigin = (value: string | undefined): string => {
   const text = value?.trim() ?? "";
-  if (!URL.canParse(text) || new URL(text).protocol !== "https:") {
+  if (!URL.canParse(text) || !allowed(new URL(text))) {
     throw new Error(
       "set the Worker URL (https) with --url or MAIL_TRACKER_URL"
     );

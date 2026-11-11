@@ -8,7 +8,6 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { z } from "zod";
 
 import { autolink } from "../../mailspring-plugin/src/autolink";
@@ -20,6 +19,7 @@ import {
 import { tokenSetAddresses } from "../recipients";
 import { createClient, readToken, workerOrigin } from "./client";
 import type { Client } from "./client";
+import { registerDom } from "./dom";
 import {
   bodyToHtml,
   fillTemplate,
@@ -239,7 +239,7 @@ const main = async (): Promise<void> => {
     : null;
   const templateFile =
     values.template ?? env.MAIL_TRACKER_TEMPLATE ?? DEFAULT_TEMPLATE;
-  GlobalRegistrator.register();
+  registerDom();
   const composed = await compose(
     {
       bcc: list(values.bcc),

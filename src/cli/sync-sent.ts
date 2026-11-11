@@ -6,12 +6,12 @@
  */
 import { parseArgs } from "node:util";
 
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { z } from "zod";
 
 import { ownPixelTokens } from "../../mailspring-plugin/src/rewrite";
 import { createClient, readToken, workerOrigin } from "./client";
 import type { Client } from "./client";
+import { registerDom } from "./dom";
 import { parseHtml } from "./render";
 
 /** One message from the owner's Sent folder, as his agent supplies it. */
@@ -176,7 +176,7 @@ const main = async (): Promise<void> => {
     writeToken: readToken(env, "MAIL_TRACKER_API_TOKEN", values["token-file"]),
   });
   const input = sentInput.parse(JSON.parse(await Bun.stdin.text()));
-  GlobalRegistrator.register();
+  registerDom();
   const report = await syncSent(client, input);
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   process.exitCode = report.failed > 0 ? 1 : 0;
