@@ -119,9 +119,19 @@ const status: ColumnLogic<ListMessage> = {
   id: "status",
 };
 
+/**
+ * The newest of sent and last open. The list data carries no click times, so a click
+ * after the last open does not move an email up.
+ */
+export const latestActivityOf = (m: ListMessage): number | null => {
+  const moments = [m.sentAt, m.lastOpen].filter((ms) => ms !== null);
+  return moments.length === 0 ? null : Math.max(...moments);
+};
+
 export const LIST_COLUMNS = {
   clicks: count<ListMessage>("clicks", (m) => m.clicks),
   firstOpen: moment<ListMessage>("firstOpen", (m) => m.firstOpen),
+  lastActivity: moment<ListMessage>("lastActivity", latestActivityOf),
   lastOpen: moment<ListMessage>("lastOpen", (m) => m.lastOpen),
   openedBy: count<ListMessage>("openedBy", (m) => m.openedBy),
   opens: count<ListMessage>("opens", (m) => m.opens),
@@ -131,7 +141,8 @@ export const LIST_COLUMNS = {
   subject: text<ListMessage>("subject", (m) => m.subject),
 };
 
-export const LIST_SORTING: SortingState = [{ desc: true, id: "sent" }];
+/** Latest activity, newest first. */
+export const LIST_SORTING: SortingState = [{ desc: true, id: "lastActivity" }];
 
 export const KIND_OPTIONS = [
   { label: "Open", value: "open" },
@@ -154,5 +165,25 @@ export const TIMELINE_COLUMNS = {
   kind: facet("kind", (e) => e.kind),
 };
 
-/** Oldest first, as the events happened. */
-export const TIMELINE_SORTING: SortingState = [{ desc: false, id: "at" }];
+/** Newest event first. */
+export const TIMELINE_SORTING: SortingState = [{ desc: true, id: "at" }];
+
+/**
+ * Recipients by their last open, newest first; never opened last, in their given order.
+ * The recipient tables are not sortable, so this is their only order.
+ */
+export const byLatestOpen = <T extends { lastOpen: number | null }>(
+  rows: readonly T[]
+): T[] =>
+  rows.toSorted((a, b) => {
+    if (a.lastOpen === b.lastOpen) {
+      return 0;
+    }
+    if (a.lastOpen === null) {
+      return 1;
+    }
+    if (b.lastOpen === null) {
+      return -1;
+    }
+    return b.lastOpen - a.lastOpen;
+  });

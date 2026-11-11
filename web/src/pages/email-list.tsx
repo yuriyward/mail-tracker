@@ -19,6 +19,7 @@ import {
   LIST_COLUMNS,
   LIST_SORTING,
   OPEN_STATES,
+  latestActivityOf,
   openedByOf,
   rowModels,
 } from "../lib/tables";
@@ -55,6 +56,12 @@ const COLUMNS: ColumnDef<ListMessage>[] = [
       </Hint>
     ),
     header: sortHeader<ListMessage>("Recipient"),
+  },
+  {
+    ...LIST_COLUMNS.lastActivity,
+    cell: ({ row }) => <When ms={latestActivityOf(row.original)} none="—" />,
+    header: sortHeader<ListMessage>("Last activity"),
+    meta: END,
   },
   {
     ...LIST_COLUMNS.sent,

@@ -33,6 +33,7 @@ import {
   KIND_OPTIONS,
   TIMELINE_COLUMNS,
   TIMELINE_SORTING,
+  byLatestOpen,
   rowModels,
 } from "../lib/tables";
 import { Summary } from "../summary";
@@ -140,12 +141,13 @@ const RecipientTable = ({ rows }: { rows: RecipientTotals[] }) => (
 );
 
 /**
- * Who opened and clicked. Current recipients come first and are what the email list
+ * Who opened and clicked, latest open first. Current recipients come first and are what the email list
  * counts; recipients removed from the draft that still have activity are listed apart.
  */
 const Recipients = ({ recipients }: { recipients: RecipientTotals[] }) => {
-  const current = recipients.filter((r) => r.current);
-  const removed = recipients.filter((r) => !r.current);
+  const sorted = byLatestOpen(recipients);
+  const current = sorted.filter((r) => r.current);
+  const removed = sorted.filter((r) => !r.current);
   return (
     <>
       <RecipientTable rows={current} />

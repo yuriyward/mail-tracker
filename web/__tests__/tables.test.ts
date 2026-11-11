@@ -13,6 +13,8 @@ import {
   LIST_SORTING,
   TIMELINE_COLUMNS,
   TIMELINE_SORTING,
+  byLatestOpen,
+  latestActivityOf,
   openStatesOf,
   openedByOf,
   rowModels,
@@ -109,8 +111,34 @@ const listTokens = (view: View): string[] =>
     .rows.map((row) => row.original.token);
 
 describe("email list sorting", () => {
-  test("defaults to sent, newest first, with unsent emails last", () => {
-    expect(listTokens({ sorting: LIST_SORTING })).toEqual(["b", "d", "a", "c"]);
+  test("defaults to latest activity, newest first", () => {
+    // a: opened at 9000, c: opened at 7000 though unsent, b: sent at 5000, d: sent at 3000.
+    expect(listTokens({ sorting: LIST_SORTING })).toEqual(["a", "c", "b", "d"]);
+  });
+
+  test("latest activity is the newer of sent and last open, none last", () => {
+    expect(
+      latestActivityOf(message("x", { lastOpen: 2000, sentAt: 4000 }))
+    ).toBe(4000);
+    expect(
+      latestActivityOf(message("x", { lastOpen: 6000, sentAt: 4000 }))
+    ).toBe(6000);
+    expect(latestActivityOf(message("x", {}))).toBeNull();
+    const rows = tableOf([message("x", {}), ...MESSAGES], LIST_COLUMNS, {
+      sorting: LIST_SORTING,
+    })
+      .getRowModel()
+      .rows.map((row) => row.original.token);
+    expect(rows).toEqual(["a", "c", "b", "d", "x"]);
+  });
+
+  test("sorts by sent, newest first, with unsent emails last", () => {
+    expect(listTokens({ sorting: [{ desc: true, id: "sent" }] })).toEqual([
+      "b",
+      "d",
+      "a",
+      "c",
+    ]);
   });
 
   test("keeps missing moments last in either direction", () => {
@@ -166,6 +194,7 @@ describe("email list sorting", () => {
     const table = tableOf(MESSAGES, LIST_COLUMNS, {});
     const first = (id: string) => table.getColumn(id)?.getFirstSortDir();
     expect(first("sent")).toBe("desc");
+    expect(first("lastActivity")).toBe("desc");
     expect(first("opens")).toBe("desc");
     expect(first("subject")).toBe("asc");
     expect(table.getColumn("status")?.getCanSort()).toBe(false);
@@ -251,10 +280,10 @@ const eventIds = (view: View): number[] =>
     .rows.map((row) => row.original.id);
 
 describe("timeline", () => {
-  test("shows events oldest first by default, and can reverse", () => {
-    expect(eventIds({ sorting: TIMELINE_SORTING })).toEqual([1, 2, 3, 4, 5]);
-    expect(eventIds({ sorting: [{ desc: true, id: "at" }] })).toEqual([
-      5, 4, 3, 2, 1,
+  test("shows events newest first by default, and can reverse", () => {
+    expect(eventIds({ sorting: TIMELINE_SORTING })).toEqual([5, 4, 3, 2, 1]);
+    expect(eventIds({ sorting: [{ desc: false, id: "at" }] })).toEqual([
+      1, 2, 3, 4, 5,
     ]);
   });
 
@@ -306,5 +335,22 @@ describe("opened by", () => {
     expect(openedByOf(message("x", { recipientUnknown: true }))).toBe(
       "shared copy"
     );
+  });
+});
+
+describe("recipients", () => {
+  test("latest open first, never opened last in their given order", () => {
+    const rows = [
+      { lastOpen: null, token: "p" },
+      { lastOpen: 2000, token: "q" },
+      { lastOpen: null, token: "r" },
+      { lastOpen: 8000, token: "s" },
+    ];
+    expect(byLatestOpen(rows).map((r) => r.token)).toEqual([
+      "s",
+      "q",
+      "p",
+      "r",
+    ]);
   });
 });
