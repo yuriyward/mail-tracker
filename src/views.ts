@@ -10,6 +10,7 @@ import { normaliseAddress } from "./recipients";
 import { NO_REOPENS } from "./reopen";
 import type { Reopens } from "./reopen";
 import type { MessageSummary } from "./schema";
+import type { Listed } from "./store";
 import {
   currentAddresses,
   countedOpens,
@@ -23,9 +24,13 @@ export interface ListView {
 }
 
 /** The listed emails, newest first, each with its current addresses and re-opens. */
-export const listView = async (db: Db, limit: number): Promise<ListView> => {
+export const listView = async (
+  db: Db,
+  limit: number,
+  listed: Listed = "listed"
+): Promise<ListView> => {
   const [summaries, addresses, opens] = await Promise.all([
-    listMessages(db, limit),
+    listMessages(db, limit, listed),
     currentAddresses(db),
     countedOpens(db),
   ]);

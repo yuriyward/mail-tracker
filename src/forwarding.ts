@@ -59,7 +59,7 @@ export const actorChanges = (first: Actor, later: Actor): string[] => {
 
 export const HINT_PREFIX = "possibly forwarded or opened by someone else";
 
-/** Probable human events (no repeats) per token set of a known recipient, oldest first. */
+/** Probable human events (no repeats or draft previews) per token set of a known recipient, oldest first. */
 const humanEventsBySet = (
   recipients: readonly RecipientRow[],
   events: readonly EventRow[]
@@ -71,7 +71,7 @@ const humanEventsBySet = (
   );
   for (const e of events) {
     const own = bySet.get(e.recipient_token ?? "");
-    if (own && e.class === "human" && e.duplicate === 0) {
+    if (own && e.class === "human" && e.duplicate === 0 && e.preview === 0) {
       own.push(e);
     }
   }

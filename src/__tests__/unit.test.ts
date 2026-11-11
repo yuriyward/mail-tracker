@@ -225,6 +225,7 @@ describe("forwarding hint", () => {
       link_token: null,
       message_token: "m",
       method: "GET",
+      preview: 0,
       reason: "",
       recipient_token: "ra",
       user_agent: "Mozilla/5.0 (X11; Linux x86_64)",

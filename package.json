@@ -13,6 +13,8 @@
     "dup": "jscpd src mailspring-plugin/src web/src --threshold 0 --min-lines 5 --min-tokens 80 --ignore '**/__tests__/**,src/networks.json,**/*.d.ts,web/src/components/ui/**,web/src/components/patterns/**,web/src/*.css'",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run build:web && bun run test && bun run dup && bun run build:plugin",
     "refresh:networks": "bun scripts/refresh-networks.ts",
+    "compose": "bun src/cli/compose.ts",
+    "sync-sent": "bun src/cli/sync-sent.ts",
     "build:plugin": "bun build mailspring-plugin/src/main.ts --outfile mailspring-plugin/lib/main.js --target node --format cjs --external mailspring-exports",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

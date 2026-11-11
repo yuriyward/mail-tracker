@@ -38,8 +38,14 @@ const mintedLinks = z.array(
   z.object({ redirectUrl: z.url({ protocol: httpsUrl }), url: z.string() })
 );
 
-/** The Worker's answer; only the per-recipient sets are used (ADR-0003). */
+/**
+ * The Worker's answer; only the per-recipient sets are used (ADR-0003), plus the set an
+ * agent's composed draft already carried (ADR-0004).
+ */
 const mintedSchema = z.object({
+  carried: z
+    .object({ imageUrl: z.url({ protocol: httpsUrl }), links: mintedLinks })
+    .nullish(),
   recipients: z.array(
     z.object({
       address: z.string(),
@@ -94,10 +100,16 @@ export const createTracker = (deps: TrackerDeps) => {
     body: string
   ): Registration | null => {
     const minted = mintedSchema.safeParse(JSON.parse(body));
+    const sets = minted.success
+      ? [
+          ...minted.data.recipients,
+          ...(minted.data.carried ? [minted.data.carried] : []),
+        ]
+      : [];
     const valid =
       minted.success &&
       minted.data.recipients.length > 0 &&
-      minted.data.recipients.every(
+      sets.every(
         (set) =>
           fromWorker(set.imageUrl, origin, "i") &&
           set.links.every((link) => fromWorker(link.redirectUrl, origin, "l"))
@@ -105,7 +117,13 @@ export const createTracker = (deps: TrackerDeps) => {
     if (!valid) {
       return null;
     }
+    const { carried } = minted.data;
     return {
+      carried: carried
+        ? Object.fromEntries(
+            carried.links.map((link) => [link.redirectUrl, link.url])
+          )
+        : null,
       draftId,
       fingerprint: print,
       recipients: Object.fromEntries(

@@ -5,6 +5,8 @@ import { EVENT_CLASSES } from "./classify";
 export const messageRow = z.object({
   created_at: z.number(),
   draft_id: z.string(),
+  /** 1 when the draft itself carries tracking (composed by an agent, ADR-0004). */
+  draft_tracked: z.number(),
   recipient: z.string(),
   sent_at: z.number().nullable(),
   /** 1 when the account sends one body to every recipient (Microsoft Graph). */
@@ -70,6 +72,12 @@ export const eventRow = z.object({
   link_token: z.string().nullable(),
   message_token: z.string(),
   method: z.string(),
+  /**
+   * 1 for a draft preview: a hit on a draft that carries tracking, before it was sent
+   * (ADR-0004). Worked out when read (store.messageDetail), never stored; such an event
+   * is read with `counted` 0.
+   */
+  preview: z.number().default(0),
   reason: z.string(),
   recipient_token: z.string().nullable(),
   user_agent: z.string(),
@@ -96,9 +104,20 @@ export const count = z.object({ n: z.number() });
 export const mintRequest = z.object({
   /** The draft's headerMessageId; registering the same draft again reuses its tokens. */
   draftId: z.string().min(1).max(998),
+  /**
+   * The draft itself carries the image and redirects (an agent's composed draft): hits
+   * before it is sent are draft previews (ADR-0004). Once set, it stays set.
+   */
+  draftTracked: z.boolean().default(false),
   /** Each link's own text in the email, by URL as in `links`; optional per link. */
   linkText: z.record(z.string().max(4096), z.string().max(2000)).default({}),
   links: z.array(z.string()).max(500).default([]),
+  /**
+   * The image token already in the draft (an agent's composed draft): register under the
+   * message that owns it instead of `draftId`, so the plugin's per-recipient sets join the
+   * same message (ADR-0004). Unknown tokens are ignored.
+   */
+  pixelToken: z.string().max(64).nullish(),
   /** Display text of every recipient, as the plugin shows it. */
   recipient: z.string().max(2000).default(""),
   /** One token set per address (To, Cc, Bcc), compared case-insensitively. */

@@ -30,6 +30,12 @@ export type TokenSet = z.infer<typeof tokenSet>;
  * such a draft counts as unregistered and registers again when a composer shows it.
  */
 const registration = z.object({
+  /**
+   * The draft already carried tracking (an agent's composed draft, ADR-0004): each of its
+   * redirect URLs to the destination, so sending swaps them for each recipient's own.
+   * Null for drafts written in Mailspring, and for entries saved before this field.
+   */
+  carried: z.record(z.string(), z.string()).nullable().default(null),
   draftId: z.string(),
   /** What was registered (subject, recipients, URLs); see snapshot.ts. */
   fingerprint: z.string(),

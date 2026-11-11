@@ -83,6 +83,7 @@ const event = (id: number, at: number, e: Partial<EventRow>): EventRow => ({
   link_token: null,
   message_token: "msg",
   method: "GET",
+  preview: 0,
   reason: "synthetic",
   recipient_token: "set-a",
   user_agent: "",

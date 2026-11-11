@@ -199,7 +199,14 @@ export const createExtension = (
           choice.set,
           tracked.origin
         );
-        applyTokenSet(draftBodyRootNode, choice.set, tracked.origin);
+        // An agent's composed draft: its own image goes, and its redirects become this
+        // recipient's (ADR-0004).
+        applyTokenSet(
+          draftBodyRootNode,
+          choice.set,
+          tracked.origin,
+          tracked.entry.carried ?? {}
+        );
       } catch (error) {
         // Never block sending; the body is left as far as it got, which is at worst untracked.
         deps.log(`tracking skipped: ${String(error)}`);

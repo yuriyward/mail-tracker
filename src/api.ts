@@ -1,18 +1,27 @@
 import { Hono } from "hono";
 
 import { readAuth, writeAuth } from "./auth";
+import { eventDisplay } from "./classify";
 import { recipientTotals } from "./dashboard-data";
 import { checkDestination } from "./destinations";
-import type { AppEnv } from "./env";
+import type { AppEnv, Db } from "./env";
 import { forwardingHints } from "./forwarding";
 import { cleanLinkText, linkName } from "./link-names";
 import { tokenSetAddresses } from "./recipients";
 import { mintRequest, sentRequest } from "./schema";
 import type { MintRequest } from "./schema";
-import { markSent, messageDetail, registerMessage } from "./store";
+import {
+  markSent,
+  messageDetail,
+  pixelOwner,
+  registerMessage,
+  tokenSetLinks,
+  unsentImageTokens,
+} from "./store";
 import type { RecipientSet } from "./store";
 import { isToken, newToken } from "./tokens";
 import { listView, peopleView, personView } from "./views";
+import type { ListView } from "./views";
 
 const LIST_LIMIT = 500;
 
@@ -91,6 +100,51 @@ const mintedSet = (
   ),
 });
 
+/**
+ * The message an agent's composed draft already carries tracking for (ADR-0004): the
+ * owner of the draft's image token, and that token set's redirects, so the plugin can
+ * swap them for each recipient's own. Null when there is no known image token.
+ */
+const adoption = async (
+  db: Db,
+  origin: string,
+  pixelToken: string | null | undefined
+) => {
+  if (pixelToken === null || pixelToken === undefined || !isToken(pixelToken)) {
+    return null;
+  }
+  const owner = await pixelOwner(db, pixelToken);
+  if (!owner) {
+    return null;
+  }
+  const links = await tokenSetLinks(db, pixelToken);
+  return {
+    carried: {
+      imageUrl: `${origin}/i/${pixelToken}.png`,
+      links: links.map((link) => ({
+        redirectUrl: `${origin}/l/${link.token}`,
+        url: link.url,
+      })),
+    },
+    draftId: owner.draft_id,
+  };
+};
+
+/** The list rows of the read API; with `unsent`, each email's image tokens too. */
+const listRows = (view: ListView, imageTokens: Map<string, string[]> | null) =>
+  view.summaries.map((m, index) => {
+    const row = {
+      ...m,
+      addresses: view.messages[index]?.addresses ?? [],
+      last_reopen: view.messages[index]?.lastReopen ?? null,
+      reopens: view.messages[index]?.reopens ?? 0,
+    };
+    if (imageTokens === null) {
+      return row;
+    }
+    return { ...row, image_tokens: imageTokens.get(m.token) ?? [m.token] };
+  });
+
 /** The authenticated API: mint tracking for one outgoing email, and read engagement. */
 export const apiRoutes = (now: () => number) => {
   const app = new Hono<AppEnv>();
@@ -112,11 +166,12 @@ export const apiRoutes = (now: () => number) => {
     if (!checked.ok) {
       return c.json({ error: checked.error }, 400);
     }
-    const submitted = [...new Set(checked.links)];
+    const adopted = await adoption(c.env.DB, origin, body.data.pixelToken);
     const registered = await registerMessage(c.env.DB, {
       at: now(),
-      draftId: body.data.draftId,
-      links: submitted.map((url) => ({
+      draftId: adopted?.draftId ?? body.data.draftId,
+      draftTracked: body.data.draftTracked,
+      links: [...new Set(checked.links)].map((url) => ({
         text: checked.text.get(url) ?? "",
         url,
       })),
@@ -127,11 +182,20 @@ export const apiRoutes = (now: () => number) => {
       subject: body.data.subject,
     });
     const { token } = registered.message;
+    // An adopted draft's sets also cover the links it already carries as redirects.
+    const submitted = [
+      ...new Set([
+        ...checked.links,
+        ...(adopted?.carried.links.map((link) => link.url) ?? []),
+      ]),
+    ];
     const urlOf = new Map(
       registered.links.map((link) => [link.token, link.url])
     );
     return c.json(
       {
+        // The token set the draft carried (null unless adopted by `pixelToken`).
+        carried: adopted?.carried ?? null,
         // Message-level tokens, for callers that do not send `recipients`.
         imageUrl: `${origin}/i/${token}.png`,
         links: redirects(
@@ -173,15 +237,12 @@ export const apiRoutes = (now: () => number) => {
    * re-open signal, src/reopen.ts) per email.
    */
   app.get("/messages", readAuth, async (c) => {
-    const view = await listView(c.env.DB, LIST_LIMIT);
-    return c.json({
-      messages: view.summaries.map((m, index) => ({
-        ...m,
-        addresses: view.messages[index]?.addresses ?? [],
-        last_reopen: view.messages[index]?.lastReopen ?? null,
-        reopens: view.messages[index]?.reopens ?? 0,
-      })),
-    });
+    const unsent = c.req.query("unsent") === "1";
+    const [view, imageTokens] = await Promise.all([
+      listView(c.env.DB, LIST_LIMIT, unsent ? "unsent" : "listed"),
+      unsent ? unsentImageTokens(c.env.DB) : null,
+    ]);
+    return c.json({ messages: listRows(view, imageTokens) });
   });
 
   /** One row per recipient address across all emails (src/people.ts). */
@@ -207,8 +268,10 @@ export const apiRoutes = (now: () => number) => {
     }
     const hints = forwardingHints(detail.recipients, detail.events);
     return c.json({
+      // `label`, `via`: the plain label, "Draft preview" for a preview (ADR-0004).
       events: detail.events.map((e) => ({
         ...e,
+        ...eventDisplay(e),
         hint: hints.get(e.id) ?? null,
       })),
       // `name`: the link's text in the email, else its domain.

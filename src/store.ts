@@ -49,6 +49,8 @@ const many = async <S extends z.ZodType>(
 
 export interface Registration {
   draftId: string;
+  /** The draft itself carries tracking (ADR-0004); never cleared once set. */
+  draftTracked: boolean;
   subject: string;
   recipient: string;
   /** Destinations with their own text in the email ('' when none). */
@@ -173,10 +175,11 @@ export const registerMessage = async (
   await db.batch([
     db
       .prepare(
-        `INSERT INTO messages (token, draft_id, subject, recipient, shared, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO messages (token, draft_id, subject, recipient, shared, draft_tracked, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (draft_id) DO UPDATE SET subject = excluded.subject,
-           recipient = excluded.recipient, shared = excluded.shared`
+           recipient = excluded.recipient, shared = excluded.shared,
+           draft_tracked = MAX(draft_tracked, excluded.draft_tracked)`
       )
       .bind(
         r.newToken(),
@@ -184,6 +187,7 @@ export const registerMessage = async (
         r.subject,
         r.recipient,
         r.shared ? 1 : 0,
+        r.draftTracked ? 1 : 0,
         r.at
       ),
     // A link's text follows the latest registration that has some for it.
@@ -333,7 +337,7 @@ export const countOtherLinksInBurst = async (
  */
 export const insertEvent = async (
   db: Db,
-  event: Omit<EventRow, "id" | "duplicate">
+  event: Omit<EventRow, "id" | "duplicate" | "preview">
 ): Promise<void> => {
   await db
     .prepare(
@@ -365,18 +369,29 @@ export const insertEvent = async (
 };
 
 const OF_MESSAGE = "FROM events e WHERE e.message_token = m.token";
-const COUNTED = "counted = 1 AND duplicate = 0";
+/**
+ * A draft preview: a hit on a draft that carries tracking, before it was sent or while it
+ * is unsent (ADR-0004). Needs `e` (event) and `m` (its message) in scope.
+ */
+const PREVIEW =
+  "(m.draft_tracked = 1 AND (m.sent_at IS NULL OR e.at < m.sent_at))";
+const COUNTED = `e.counted = 1 AND e.duplicate = 0 AND NOT ${PREVIEW}`;
 /** The emails the list shows: sent, or with events (e.g. the sent notice was lost). */
 const LISTED = `(m.sent_at IS NOT NULL OR EXISTS (SELECT 1 ${OF_MESSAGE}))`;
 
+/** Which emails a list holds: the usual list, or every email not marked sent yet. */
+export type Listed = "listed" | "unsent";
+
 /**
- * Sent emails (or ones with events) with summaries. Opens and clicks count only events
+ * Sent emails (or ones with events), or with `unsent` every email not marked sent, with
+ * summaries. Opens and clicks count only events
  * marked counted (probable humans and on-open proxies) and not duplicate; the timeline
  * keeps every row.
  */
 export const listMessages = async (
   db: Db,
-  limit: number
+  limit: number,
+  listed: Listed = "listed"
 ): Promise<MessageSummary[]> =>
   await many(
     db
@@ -393,9 +408,9 @@ export const listMessages = async (
            (SELECT COUNT(DISTINCT e.recipient_token) FROM events e
              JOIN recipients r ON r.token = e.recipient_token
              WHERE e.message_token = m.token AND r.current = 1
-               AND e.counted = 1 AND e.duplicate = 0) AS opened_by
+               AND ${COUNTED}) AS opened_by
          FROM messages m
-         WHERE ${LISTED}
+         WHERE ${listed === "unsent" ? "m.sent_at IS NULL" : LISTED}
          ORDER BY COALESCE(m.sent_at, m.created_at) DESC LIMIT ?`
       )
       .bind(limit),
@@ -428,13 +443,19 @@ export const messageDetail = async (
     ),
     many(
       db
-        .prepare("SELECT * FROM events WHERE message_token = ? ORDER BY at, id")
+        .prepare(
+          `SELECT e.*, ${PREVIEW} AS preview FROM events e
+           JOIN messages m ON m.token = e.message_token
+           WHERE e.message_token = ? ORDER BY e.at, e.id`
+        )
         .bind(token),
       eventRow
     ),
     recipientSets(db, token),
   ]);
-  return { events, links, message, recipients: sets.recipients };
+  // A draft preview is kept raw but never counted (ADR-0004).
+  const read = events.map((e) => (e.preview === 1 ? { ...e, counted: 0 } : e));
+  return { events: read, links, message, recipients: sets.recipients };
 };
 
 /**
@@ -445,8 +466,9 @@ export const countedOpens = async (db: Db): Promise<CountedOpenRow[]> =>
   await many(
     db.prepare(
       `SELECT e.id, e.at, e.message_token, e.recipient_token FROM events e
+       JOIN messages m ON m.token = e.message_token
        LEFT JOIN recipients r ON r.token = e.recipient_token
-       WHERE e.kind = 'open' AND e.class IN ('human', 'proxy') AND e.counted = 1 AND e.duplicate = 0
+       WHERE e.kind = 'open' AND e.class IN ('human', 'proxy') AND ${COUNTED}
          AND (e.recipient_token IS NULL OR r.current = 1)
        ORDER BY e.at, e.id`
     ),
@@ -503,3 +525,59 @@ export const recipientActivity = async (
       .bind(address),
     recipientActivityRow
   );
+
+/** The message that owns an image token (a token set's or a message-level one). */
+export const pixelOwner = async (
+  db: Db,
+  imageToken: string
+): Promise<MessageRow | null> => {
+  const pixel = await findPixel(db, imageToken);
+  return pixel ? await findMessage(db, pixel.message_token) : null;
+};
+
+const setLinkRow = linkRow.pick({ token: true, url: true });
+
+/**
+ * The destinations and redirect tokens of the token set an image token belongs to: a
+ * recipient's (or shared) set, or the message-level links for a message token.
+ */
+export const tokenSetLinks = async (
+  db: Db,
+  imageToken: string
+): Promise<{ url: string; token: string }[]> =>
+  await many(
+    db
+      .prepare(
+        `SELECT l.url, rl.token FROM recipient_links rl JOIN links l ON l.token = rl.link_token
+         WHERE rl.recipient_token = ?1
+         UNION ALL
+         SELECT url, token FROM links WHERE message_token = ?1`
+      )
+      .bind(imageToken),
+    setLinkRow
+  );
+
+/**
+ * Every image token of each email not marked sent: its token sets' (current or not) and
+ * its own message-level one, so a sent copy can be matched by the image it carries.
+ */
+export const unsentImageTokens = async (
+  db: Db
+): Promise<Map<string, string[]>> => {
+  const rows = await many(
+    db.prepare(
+      `SELECT r.message_token, r.token FROM recipients r
+       JOIN messages m ON m.token = r.message_token WHERE m.sent_at IS NULL
+       ORDER BY r.message_token, r.position`
+    ),
+    recipientRow.pick({ message_token: true, token: true })
+  );
+  const byMessage = new Map<string, string[]>();
+  for (const row of rows) {
+    byMessage.set(row.message_token, [
+      ...(byMessage.get(row.message_token) ?? [row.message_token]),
+      row.token,
+    ]);
+  }
+  return byMessage;
+};

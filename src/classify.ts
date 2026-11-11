@@ -22,6 +22,7 @@ export type EventClass = (typeof EVENT_CLASSES)[number];
 export const EVENT_LABELS = [
   "Opened",
   "Clicked",
+  "Draft preview",
   "Prefetch",
   "Scanner",
   "You",
@@ -57,12 +58,20 @@ const FIXED_LABELS: Record<
   EventLabel
 > = { scanner: "Scanner", self: "You", unknown: "Unknown" };
 
-/** The plain label of a stored event (class, kind and reason are as stored). */
+/**
+ * The plain label of a stored event (class, kind and reason are as stored). A draft preview
+ * (a hit on a draft that carries tracking before it was sent, ADR-0004) is "Draft preview"
+ * whatever its class.
+ */
 export const eventDisplay = (e: {
   class: EventClass;
   kind: "open" | "click";
   reason: string;
+  preview?: number;
 }): EventDisplay => {
+  if (e.preview === 1) {
+    return { label: "Draft preview", via: null };
+  }
   const action: EventLabel = e.kind === "open" ? "Opened" : "Clicked";
   if (e.class === "human") {
     return { label: action, via: null };
