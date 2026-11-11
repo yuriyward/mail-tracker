@@ -14,6 +14,8 @@ import { createHarness, HOUR, minted } from "./harness";
 import type { Harness } from "./harness";
 
 const MINUTE = 60_000;
+/** Apple Mail Privacy Protection's bare user agent: a prefetch, never counted. */
+const APPLE_PREFETCH = "Mozilla/5.0";
 const GMAIL_PROXY =
   "Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko Firefox/11.0 (via ggpht.com GoogleImageProxy)";
 
@@ -101,9 +103,9 @@ describe("re-open signal", () => {
     await h.hit(ann.imageUrl);
     h.state.clock += 30 * MINUTE;
     await h.hit(ann.imageUrl);
-    // A Gmail proxy fetch after a gap does not resume anything.
+    // An Apple prefetch after a gap is not counted, so it resumes nothing.
     h.state.clock += 2 * HOUR;
-    await h.hit(ann.imageUrl, { "User-Agent": GMAIL_PROXY });
+    await h.hit(ann.imageUrl, { "User-Agent": APPLE_PREFETCH });
     h.state.clock += HOUR;
     const reopenAt = h.state.clock;
     await h.hit(ann.imageUrl);
@@ -134,6 +136,65 @@ describe("re-open signal", () => {
     const api = await h.read("/api/messages");
     expect(await api.json()).toMatchObject({
       messages: [{ last_reopen: reopenAt, reopens: 1, token: email.token }],
+    });
+  });
+
+  test("a Gmail recipient whose opens all come through the image proxy re-opens, and the median counts the proxy's first open", async () => {
+    const email = await sendTo("<g1@example.test>", ["gil@example.com"]);
+    const gil = setOf(email, "gil@example.com");
+    const gmail = { "User-Agent": GMAIL_PROXY };
+    // sendTo moved the clock 10 minutes past sending; the first proxy open is 15 minutes in.
+    h.state.clock += 5 * MINUTE;
+    await h.hit(gil.imageUrl, gmail);
+    h.state.clock += 20 * MINUTE;
+    await h.hit(gil.imageUrl, gmail);
+    h.state.clock += HOUR;
+    const reopenAt = h.state.clock;
+    await h.hit(gil.imageUrl, gmail);
+    expect(h.events().map((e) => [e.class, e.counted])).toEqual([
+      ["proxy", 1],
+      ["proxy", 1],
+      ["proxy", 1],
+    ]);
+
+    const listed = await appJson("/app/data", listDataSchema);
+    expect(listed.messages[0]).toMatchObject({
+      lastReopen: reopenAt,
+      reopens: 1,
+    });
+    const data = await appJson(
+      `/app/messages/${email.token}/data`,
+      detailDataSchema
+    );
+    expect(data.timeline.filter((e) => e.reopen).map((e) => e.at)).toEqual([
+      reopenAt,
+    ]);
+    const { person } = await appJson(
+      `${personPath("gil@example.com")}/data`,
+      personDataSchema
+    );
+    expect(person).toMatchObject({
+      lastReopen: reopenAt,
+      medianFirstOpen: 15 * MINUTE,
+      reopens: 1,
+    });
+  });
+
+  test("an Apple prefetch is neither a first open for the median nor part of a run", async () => {
+    const email = await sendTo("<g2@example.test>", ["amy@example.com"]);
+    const amy = setOf(email, "amy@example.com");
+    await h.hit(amy.imageUrl, { "User-Agent": APPLE_PREFETCH });
+    h.state.clock += 2 * HOUR;
+    // The first counted open: 2 h 10 min after sending, and no re-open.
+    await h.hit(amy.imageUrl);
+    const { person } = await appJson(
+      `${personPath("amy@example.com")}/data`,
+      personDataSchema
+    );
+    expect(person).toMatchObject({
+      lastReopen: null,
+      medianFirstOpen: 2 * HOUR + 10 * MINUTE,
+      reopens: 0,
     });
   });
 

@@ -5,7 +5,7 @@ import type { Db, Row, Statement } from "./env";
 import {
   count,
   eventRow,
-  humanOpenRow,
+  countedOpenRow,
   linkRow,
   linkWithSentAt,
   messageRow,
@@ -17,7 +17,7 @@ import {
 } from "./schema";
 import type {
   EventRow,
-  HumanOpenRow,
+  CountedOpenRow,
   LinkRow,
   LinkWithSentAt,
   MessageRow,
@@ -438,19 +438,19 @@ export const messageDetail = async (
 };
 
 /**
- * Every counted, non-repeat probable-human open through a current recipient's token set
+ * Every counted, non-repeat open (probable human or on-open image proxy) through a current recipient's token set
  * or a message-level token, oldest first: the input of the re-open signal (src/reopen.ts).
  */
-export const humanOpens = async (db: Db): Promise<HumanOpenRow[]> =>
+export const countedOpens = async (db: Db): Promise<CountedOpenRow[]> =>
   await many(
     db.prepare(
       `SELECT e.id, e.at, e.message_token, e.recipient_token FROM events e
        LEFT JOIN recipients r ON r.token = e.recipient_token
-       WHERE e.kind = 'open' AND e.class = 'human' AND e.counted = 1 AND e.duplicate = 0
+       WHERE e.kind = 'open' AND e.class IN ('human', 'proxy') AND e.counted = 1 AND e.duplicate = 0
          AND (e.recipient_token IS NULL OR r.current = 1)
        ORDER BY e.at, e.id`
     ),
-    humanOpenRow
+    countedOpenRow
   );
 
 /** Current, known addresses per email, in draft order. */
@@ -492,8 +492,6 @@ export const recipientActivity = async (
            m.sent_at, m.created_at,
            (SELECT MIN(at) ${OF_SET} AND kind = 'open' AND ${COUNTED}) AS first_open,
            (SELECT MAX(at) ${OF_SET} AND kind = 'open' AND ${COUNTED}) AS last_open,
-           (SELECT MIN(at) ${OF_SET} AND kind = 'open' AND class = 'human' AND ${COUNTED})
-             AS first_human_open,
            (SELECT MAX(at) ${OF_SET} AND kind = 'click' AND ${COUNTED}) AS last_click,
            (SELECT COUNT(*) ${OF_SET} AND kind = 'open' AND ${COUNTED}) AS opens,
            (SELECT COUNT(*) ${OF_SET} AND kind = 'click' AND ${COUNTED}) AS clicks

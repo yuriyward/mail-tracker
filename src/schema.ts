@@ -117,7 +117,6 @@ export const recipientActivityRow = z.object({
   address: z.string(),
   clicks: z.number(),
   created_at: z.number(),
-  first_human_open: z.number().nullable(),
   first_open: z.number().nullable(),
   last_click: z.number().nullable(),
   last_open: z.number().nullable(),
@@ -129,11 +128,11 @@ export const recipientActivityRow = z.object({
 });
 export type RecipientActivityRow = z.infer<typeof recipientActivityRow>;
 
-/** A counted, non-repeat probable-human open (the re-open signal, src/reopen.ts). */
-export const humanOpenRow = z.object({
+/** A counted, non-repeat open of a probable human or on-open proxy (the re-open signal, src/reopen.ts). */
+export const countedOpenRow = z.object({
   at: z.number(),
   id: z.number(),
   message_token: z.string(),
   recipient_token: z.string().nullable(),
 });
-export type HumanOpenRow = z.infer<typeof humanOpenRow>;
+export type CountedOpenRow = z.infer<typeof countedOpenRow>;

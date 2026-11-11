@@ -12,7 +12,7 @@ import type { Reopens } from "./reopen";
 import type { MessageSummary } from "./schema";
 import {
   currentAddresses,
-  humanOpens,
+  countedOpens,
   listMessages,
   recipientActivity,
 } from "./store";
@@ -27,7 +27,7 @@ export const listView = async (db: Db, limit: number): Promise<ListView> => {
   const [summaries, addresses, opens] = await Promise.all([
     listMessages(db, limit),
     currentAddresses(db),
-    humanOpens(db),
+    countedOpens(db),
   ]);
   const { byEmail } = reopensByEmail(opens);
   return {
@@ -43,7 +43,7 @@ export const listView = async (db: Db, limit: number): Promise<ListView> => {
 
 /** Re-opens per current token set, over every listed email. */
 const reopensBySet = async (db: Db): Promise<Map<string, Reopens>> =>
-  reopensByEmail(await humanOpens(db)).bySet;
+  reopensByEmail(await countedOpens(db)).bySet;
 
 /** Everyone the listed emails went to, newest activity first. */
 export const peopleView = async (db: Db): Promise<Person[]> => {

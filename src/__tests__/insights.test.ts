@@ -11,11 +11,11 @@ import {
   NO_REOPENS,
   REOPEN_GAP_MS,
   findReopens,
-  humanOpensOf,
+  countedOpensOf,
   reopensByGroup,
   summarise,
 } from "../reopen";
-import type { HumanOpen } from "../reopen";
+import type { CountedOpen } from "../reopen";
 import type { EventRow, RecipientActivityRow } from "../schema";
 
 const MINUTE = 60_000;
@@ -64,7 +64,7 @@ describe("link names", () => {
   });
 });
 
-const open = (id: number, at: number, group = "set-a"): HumanOpen => ({
+const open = (id: number, at: number, group = "set-a"): CountedOpen => ({
   at,
   group,
   id,
@@ -129,19 +129,31 @@ describe("re-open detection", () => {
     );
   });
 
-  test("only counted, non-repeat probable-human opens take part", () => {
+  test("prefetches, scanners, own hits, repeats and clicks neither start nor resume a run", () => {
     const events = [
       event(1, T0, {}),
-      // A Gmail proxy fetch, an Apple prefetch, a scanner, a repeat and a click.
-      event(2, T0 + 2 * HOUR, { class: "proxy" }),
-      event(3, T0 + 3 * HOUR, { class: "proxy", counted: 0 }),
-      event(4, T0 + 4 * HOUR, { class: "scanner", counted: 0 }),
+      // An Apple prefetch, a scanner, an own hit, a repeat and a click.
+      event(2, T0 + 2 * HOUR, { class: "proxy", counted: 0 }),
+      event(3, T0 + 3 * HOUR, { class: "scanner", counted: 0 }),
+      event(4, T0 + 4 * HOUR, { class: "self", counted: 0 }),
       event(5, T0 + 5 * HOUR, { duplicate: 1 }),
       event(6, T0 + 6 * HOUR, { kind: "click" }),
     ];
-    expect(findReopens(humanOpensOf(events))).toEqual([]);
+    expect(findReopens(countedOpensOf(events))).toEqual([]);
     const later = [...events, event(7, T0 + 7 * HOUR, {})];
-    expect(findReopens(humanOpensOf(later)).map((o) => o.id)).toEqual([7]);
+    expect(findReopens(countedOpensOf(later)).map((o) => o.id)).toEqual([7]);
+  });
+
+  test("Gmail's on-open proxy re-opens: counted proxy opens take part", () => {
+    const gmail = { class: "proxy", counted: 1 } as const;
+    const events = [
+      event(1, T0, gmail),
+      event(2, T0 + 20 * MINUTE, gmail),
+      event(3, T0 + 2 * HOUR, gmail),
+      // A probable human after a proxy open is measured from the proxy open.
+      event(4, T0 + 2 * HOUR + 30 * MINUTE, {}),
+    ];
+    expect(findReopens(countedOpensOf(events)).map((o) => o.id)).toEqual([3]);
   });
 
   test("message-level tokens group by email", () => {
@@ -149,7 +161,7 @@ describe("re-open detection", () => {
       event(1, T0, { recipient_token: null }),
       event(2, T0 + 2 * HOUR, { recipient_token: null }),
     ];
-    expect(findReopens(humanOpensOf(events))).toEqual([
+    expect(findReopens(countedOpensOf(events))).toEqual([
       { at: T0 + 2 * HOUR, group: "message:msg", id: 2 },
     ]);
   });
@@ -162,7 +174,6 @@ const row = (
   address: "ann@example.com",
   clicks: 0,
   created_at: T0,
-  first_human_open: null,
   first_open: null,
   last_click: null,
   last_open: null,
@@ -185,7 +196,6 @@ describe("people aggregates", () => {
   test("one person across emails: counts, latest moments, median first open, re-opens", () => {
     const rows = [
       row("r1", {
-        first_human_open: T0 + 10 * MINUTE,
         first_open: T0 + 10 * MINUTE,
         last_open: T0 + 3 * HOUR,
         opens: 3,
@@ -193,11 +203,10 @@ describe("people aggregates", () => {
       }),
       row("r2", {
         clicks: 1,
-        first_human_open: T0 + 1 * HOUR + 30 * MINUTE,
-        first_open: T0 + 1 * HOUR,
+        // Gmail's on-open proxy fetched first, 30 minutes after sending: it counts.
+        first_open: T0 + 1 * HOUR + 30 * MINUTE,
         last_click: T0 + 2 * HOUR,
-        last_open: T0 + 1 * HOUR + 30 * MINUTE,
-        // An image proxy opened first: the median uses the first probable human.
+        last_open: T0 + 1 * HOUR + 40 * MINUTE,
         opens: 2,
         sent_at: T0 + HOUR,
       }),
@@ -232,7 +241,7 @@ describe("people aggregates", () => {
   test("an open before the reported send time counts as no delay", () => {
     const person = personOf(
       "ann@example.com",
-      [row("r1", { first_human_open: T0 - MINUTE, opens: 1 })],
+      [row("r1", { first_open: T0 - MINUTE, opens: 1 })],
       () => NO_REOPENS
     );
     expect(person.medianFirstOpen).toBe(0);

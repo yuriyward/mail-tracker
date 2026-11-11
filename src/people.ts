@@ -42,11 +42,14 @@ export const personEmail = (
   token: row.message_token,
 });
 
-/** Delay from sending to the first probable-human open; null when either is missing. */
+/**
+ * Delay from sending to the first counted open (a probable human or an on-open proxy such
+ * as Gmail's; prefetches are not counted); null when either is missing.
+ */
 const firstOpenDelay = (row: RecipientActivityRow): number | null =>
-  row.sent_at === null || row.first_human_open === null
+  row.sent_at === null || row.first_open === null
     ? null
-    : Math.max(0, row.first_human_open - row.sent_at);
+    : Math.max(0, row.first_open - row.sent_at);
 
 /** One person's figures from their token sets (all with the same address). */
 export const personOf = (

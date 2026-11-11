@@ -10,7 +10,7 @@ import { linkName } from "./link-names";
 import {
   NO_REOPENS,
   findReopens,
-  humanOpensOf,
+  countedOpensOf,
   openGroup,
   reopensByGroup,
   summarise,
@@ -18,7 +18,7 @@ import {
 import type { Reopens } from "./reopen";
 import type {
   EventRow,
-  HumanOpenRow,
+  CountedOpenRow,
   LinkRow,
   MessageSummary,
   RecipientRow,
@@ -134,7 +134,7 @@ const timelineEventSchema = z.object({
   reason: z.string(),
   /** The token set's address ('' when shared); null for message-level tokens. */
   recipient: z.string().nullable(),
-  /** A probable-human open after a gap of an hour or more (src/reopen.ts). */
+  /** A counted open (human or on-open proxy) after a gap of an hour or more (src/reopen.ts). */
   reopen: z.boolean(),
   /** The clicked link's destination; null for opens. */
   url: z.string().nullable(),
@@ -166,7 +166,7 @@ export const personSchema = z.object({
   lastClick: at,
   lastOpen: at,
   lastSent: at,
-  /** Median delay from sending to the first probable-human open (ms), over opened emails. */
+  /** Median delay from sending to the first counted open (ms; human or on-open proxy). */
   medianFirstOpen: at,
   /** Of `emails`, those with a counted open or click by this person. */
   opened: z.number(),
@@ -240,7 +240,7 @@ export const recipientTotals = (
   events: EventRow[],
   hints: ReadonlyMap<number, string>
 ): RecipientTotals[] => {
-  const reopens = reopensByGroup(findReopens(humanOpensOf(events)));
+  const reopens = reopensByGroup(findReopens(countedOpensOf(events)));
   return recipients.flatMap((r) => {
     const own = events.filter((e) => e.recipient_token === r.token);
     if (r.current === 0 && own.length === 0) {
@@ -294,7 +294,7 @@ export const messageTotals = ({
   const countedOpens = opens.filter(counts);
   const clicks = events.filter((e) => e.kind === "click");
   const countedClicks = clicks.filter(counts).length;
-  const reopenEvents = findReopens(humanOpensOf(events));
+  const reopenEvents = findReopens(countedOpensOf(events));
   return {
     clicks: {
       counted: countedClicks,
@@ -353,7 +353,7 @@ export const timelineContext = (
   addresses: new Map(recipients.map((r) => [r.token, r.address])),
   hints,
   links: new Map(links.map((link) => [link.token, link])),
-  reopens: new Set(findReopens(humanOpensOf(events)).map((o) => o.id)),
+  reopens: new Set(findReopens(countedOpensOf(events)).map((o) => o.id)),
 });
 
 export const timelineEvent = (
@@ -390,15 +390,17 @@ export interface ReopenIndex {
   bySet: Map<string, Reopens>;
 }
 
-/** Re-opens per email, from the human opens of every listed email (store.humanOpens). */
-export const reopensByEmail = (opens: readonly HumanOpenRow[]): ReopenIndex => {
+/** Re-opens per email, from the counted opens of every listed email (store.countedOpens). */
+export const reopensByEmail = (
+  opens: readonly CountedOpenRow[]
+): ReopenIndex => {
   const emailOf = new Map<string, string>();
-  const human = opens.map((o) => {
+  const counted = opens.map((o) => {
     const group = openGroup(o.recipient_token, o.message_token);
     emailOf.set(group, o.message_token);
     return { at: o.at, group, id: o.id };
   });
-  const reopenEvents = findReopens(human);
+  const reopenEvents = findReopens(counted);
   const byEmail = new Map<string, ReturnType<typeof findReopens>>();
   for (const o of reopenEvents) {
     const email = emailOf.get(o.group) ?? "";

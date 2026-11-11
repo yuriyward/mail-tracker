@@ -243,11 +243,12 @@ describe("per-email totals", () => {
       },
       firstOpen,
       lastOpen,
-      lastReopen: null,
+      // The Gmail proxy open an hour after the first open is a re-open.
+      lastReopen: lastOpen,
       opens: { counted: 2, human: 1, notCounted: 2, proxy: 1 },
       // Registered without recipients (message-level tokens), as before ADR-0003.
       recipients: [],
-      reopens: 0,
+      reopens: 1,
     });
     expect(data.timeline.map((e) => [e.kind, e.class, e.duplicate])).toEqual([
       ["open", "proxy", false],
