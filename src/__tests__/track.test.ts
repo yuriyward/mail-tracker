@@ -34,13 +34,13 @@ beforeEach(async () => {
 });
 
 describe("GET /i/:token", () => {
-  test("returns an uncacheable GIF and records one classified open", async () => {
+  test("returns an uncacheable PNG and records one classified open", async () => {
     const response = await h.hit(sent.imageUrl);
     expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Type")).toBe("image/gif");
+    expect(response.headers.get("Content-Type")).toBe("image/png");
     expect(response.headers.get("Cache-Control")).toContain("no-store");
     const bytes = new Uint8Array(await response.arrayBuffer());
-    expect(new TextDecoder().decode(bytes.slice(0, 6))).toBe("GIF89a");
+    expect(new TextDecoder().decode(bytes.slice(1, 4))).toBe("PNG");
     expect(h.events()).toMatchObject([
       {
         at: h.state.clock,
@@ -53,9 +53,9 @@ describe("GET /i/:token", () => {
   });
 
   test("serves the same image for unknown tokens without recording", async () => {
-    const response = await h.hit(`/i/${UNKNOWN_TOKEN}`);
+    const response = await h.hit(`/i/${UNKNOWN_TOKEN}.png`);
     expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Type")).toBe("image/gif");
+    expect(response.headers.get("Content-Type")).toBe("image/png");
     const malformed = await h.hit("/i/not-a-token");
     expect(malformed.status).toBe(200);
     expect(h.events()).toHaveLength(0);

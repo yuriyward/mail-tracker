@@ -23,6 +23,8 @@ export const SENT_RETRY_MS = [
 
 export interface TrackerDeps {
   settings: () => Settings;
+  /** The draft's account sends one body to all recipients (Microsoft Graph). */
+  sendsViaGraph: (draft: Message) => boolean;
   config: ConfigStore;
   transport: Transport;
   now: () => number;
@@ -32,11 +34,20 @@ export interface TrackerDeps {
 
 const httpsUrl = /^https$/u;
 
+const mintedLinks = z.array(
+  z.object({ redirectUrl: z.url({ protocol: httpsUrl }), url: z.string() })
+);
+
+/** The Worker's answer; only the per-recipient sets are used (ADR-0003). */
 const mintedSchema = z.object({
-  imageUrl: z.url({ protocol: httpsUrl }),
-  links: z.array(
-    z.object({ redirectUrl: z.url({ protocol: httpsUrl }), url: z.string() })
+  recipients: z.array(
+    z.object({
+      address: z.string(),
+      imageUrl: z.url({ protocol: httpsUrl }),
+      links: mintedLinks,
+    })
   ),
+  shared: z.boolean(),
   token: z.string(),
 });
 
@@ -85,9 +96,11 @@ export const createTracker = (deps: TrackerDeps) => {
     const minted = mintedSchema.safeParse(JSON.parse(body));
     const valid =
       minted.success &&
-      fromWorker(minted.data.imageUrl, origin, "i") &&
-      minted.data.links.every((link) =>
-        fromWorker(link.redirectUrl, origin, "l")
+      minted.data.recipients.length > 0 &&
+      minted.data.recipients.every(
+        (set) =>
+          fromWorker(set.imageUrl, origin, "i") &&
+          set.links.every((link) => fromWorker(link.redirectUrl, origin, "l"))
       );
     if (!valid) {
       return null;
@@ -95,11 +108,19 @@ export const createTracker = (deps: TrackerDeps) => {
     return {
       draftId,
       fingerprint: print,
-      imageUrl: minted.data.imageUrl,
-      links: Object.fromEntries(
-        minted.data.links.map((link) => [link.url, link.redirectUrl])
+      recipients: Object.fromEntries(
+        minted.data.recipients.map((set) => [
+          set.address,
+          {
+            imageUrl: set.imageUrl,
+            links: Object.fromEntries(
+              set.links.map((link) => [link.url, link.redirectUrl])
+            ),
+          },
+        ])
       ),
       savedAt: deps.now(),
+      shared: minted.data.shared,
       token: minted.data.token,
     };
   };
@@ -119,7 +140,11 @@ export const createTracker = (deps: TrackerDeps) => {
     const root = parseBody(draft.body ?? "");
     // The same autolinking as at send time, so bare URLs are registered too.
     autolink(root);
-    const current = snapshot(draft, root, origin);
+    const current = snapshot(draft, root, origin, deps.sendsViaGraph(draft));
+    if (current.recipients.length === 0) {
+      // Nobody to track for yet; registered once a recipient is added.
+      return;
+    }
     const print = fingerprint(current);
     if (lookup(deps.config, draftId)?.fingerprint === print) {
       return;

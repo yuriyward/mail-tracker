@@ -17,3 +17,4 @@ Feature `status` is derived: `active` while an open work order claims it, `shipp
 |---|---|---|---|
 | `ADR-0001` | decision | accepted | [Product scope and boundaries](system/decisions/ADR-0001-product-scope-and-boundaries-b2e282d1-ebdf-4d6d-912d-ab59134530c3.md) |
 | `ADR-0002` | decision | accepted | [Track at send time with a Mailspring plugin](system/decisions/ADR-0002-track-at-send-time-with-a-mailspring-plugin-cae9d840-91bb-4598-ad70-f880d8f4b0be.md) |
+| `ADR-0003` | decision | accepted | [Per-recipient tracking tokens](system/decisions/ADR-0003-per-recipient-tracking-tokens-ce549033-8de8-4e29-be7b-d52ed4c6308e.md) |

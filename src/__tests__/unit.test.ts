@@ -3,6 +3,15 @@ import { describe, expect, test } from "bun:test";
 import { classify } from "../classify";
 import type { EventClass, Hit } from "../classify";
 import { checkDestination } from "../destinations";
+import {
+  actorChanges,
+  deviceClass,
+  forwardingHints,
+  HINT_PREFIX,
+} from "../forwarding";
+import type { DeviceClass } from "../forwarding";
+import { normaliseAddress, tokenSetAddresses } from "../recipients";
+import type { EventRow, RecipientRow } from "../schema";
 import { isToken, newToken } from "../tokens";
 
 describe("tokens", () => {
@@ -186,5 +195,119 @@ describe("classification", () => {
       hit({ ageMs: 0, kind: "click", selfIps: ["198.51.100.7"] })
     );
     expect(result.class).toBe("self");
+  });
+});
+
+describe("forwarding hint", () => {
+  const recipients: RecipientRow[] = [
+    {
+      address: "alex@example.com",
+      current: 1,
+      message_token: "m",
+      position: 0,
+      token: "ra",
+    },
+    { address: "", current: 1, message_token: "m", position: 1, token: "rs" },
+  ];
+  let id = 0;
+  const event = (overrides: Partial<EventRow>): EventRow => {
+    id += 1;
+    return {
+      as_organization: "Example Broadband",
+      at: id * 1000,
+      class: "human",
+      counted: 1,
+      country: "DE",
+      duplicate: 0,
+      id,
+      ip: "198.51.100.1",
+      kind: "open",
+      link_token: null,
+      message_token: "m",
+      method: "GET",
+      reason: "",
+      recipient_token: "ra",
+      user_agent: "Mozilla/5.0 (X11; Linux x86_64)",
+      ...overrides,
+    };
+  };
+
+  test.each<[string, DeviceClass | null]>([
+    [
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148",
+      "phone",
+    ],
+    [
+      "Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/131.0 Mobile Safari/537.36",
+      "phone",
+    ],
+    [
+      "Mozilla/5.0 (Linux; Android 15; Tab S9) Chrome/131.0 Safari/537.36",
+      "tablet",
+    ],
+    ["Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)", "tablet"],
+    ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0", "computer"],
+    ["Microsoft Outlook 16.0", "computer"],
+    ["", null],
+  ])("device class of %s is %s", (userAgent, expected) => {
+    expect(deviceClass(userAgent)).toBe(expected);
+  });
+
+  test("compares each later human event with the recipient's first one", () => {
+    const first = event({});
+    const same = event({ kind: "click" });
+    const away = event({ as_organization: "Other Telecom" });
+    const hints = forwardingHints(recipients, [away, same, first]);
+    expect([...hints]).toEqual([
+      [
+        away.id,
+        `${HINT_PREFIX}: network Other Telecom (first: Example Broadband)`,
+      ],
+    ]);
+  });
+
+  test("ignores proxies, repeats, missing facts, shared sets and message-level tokens", () => {
+    const events = [
+      // A Gmail proxy open first says nothing about the reader; the human open is the baseline.
+      event({ as_organization: "Google LLC", class: "proxy" }),
+      event({}),
+      event({ as_organization: "Other Telecom", duplicate: 1 }),
+      event({ as_organization: "", country: "", user_agent: "" }),
+      event({ class: "scanner", country: "US" }),
+      event({ recipient_token: "rs" }),
+      event({ country: "FR", recipient_token: "rs" }),
+      event({ recipient_token: null }),
+      event({ country: "FR", recipient_token: null }),
+    ];
+    expect(forwardingHints(recipients, events).size).toBe(0);
+  });
+
+  test("actorChanges lists only facts known on both sides", () => {
+    expect(
+      actorChanges(
+        { country: "DE", device: "computer", network: "" },
+        { country: "DE", device: "phone", network: "Other" }
+      )
+    ).toEqual(["device phone (first: computer)"]);
+  });
+});
+
+describe("token set addresses", () => {
+  test("one per distinct address, or one shared set", () => {
+    expect(normaliseAddress(" Alex@Example.COM ")).toBe("alex@example.com");
+    const all = [
+      "alex@example.com",
+      "Alex@example.com",
+      "sam@example.net",
+      " ",
+    ];
+    expect(tokenSetAddresses(all, false)).toEqual([
+      "alex@example.com",
+      "sam@example.net",
+    ]);
+    expect(tokenSetAddresses(all, true)).toEqual([""]);
+    expect(tokenSetAddresses(["Alex@example.com"], true)).toEqual([
+      "alex@example.com",
+    ]);
   });
 });

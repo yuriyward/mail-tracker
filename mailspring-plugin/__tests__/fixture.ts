@@ -81,6 +81,7 @@ export const memoryConfig = (): ConfigStore & {
 };
 
 export const draft = (overrides: Partial<Message> = {}): Message => ({
+  accountId: "account-1",
   bcc: [{ email: "boss@example.net" }],
   body: BODY,
   cc: [{ email: "sam@example.net" }],
@@ -94,6 +95,8 @@ export const draft = (overrides: Partial<Message> = {}): Message => ({
 
 interface FixtureState {
   settings: Settings;
+  /** The account sends through Microsoft Graph (one body for all recipients). */
+  graph: boolean;
   /** Replaces the Worker for the next requests when set. */
   transport: Transport | null;
 }
@@ -112,6 +115,7 @@ export const createFixture = async () => {
   const requests: ApiRequest[] = [];
   const logs: string[] = [];
   const state: FixtureState = {
+    graph: false,
     settings: { apiToken: "test-api-token", apiUrl: ORIGIN, enabled: true },
     transport: null,
   };
@@ -139,6 +143,7 @@ export const createFixture = async () => {
       config,
       log,
       now: () => h.state.clock,
+      sendsViaGraph: () => state.graph,
       setTimer: (run) => {
         timers.push(run);
         return () => {
@@ -154,6 +159,7 @@ export const createFixture = async () => {
     const extension = createExtension(StubComposerExtension, {
       config,
       log,
+      sendsViaGraph: () => state.graph,
       settings: () => state.settings,
     });
     const tick = async (): Promise<void> => {
@@ -177,9 +183,10 @@ export const createFixture = async () => {
     await target.tick();
   };
 
+  /** Builds the send task as Mailspring would; Graph unless overridden follows `state.graph`. */
   const send = (
     message: Message = draft(),
-    sendsViaGraph = false,
+    sendsViaGraph = state.graph,
     window?: Window
   ): SentTask =>
     forSending([(window ?? main).extension], message, sendsViaGraph);

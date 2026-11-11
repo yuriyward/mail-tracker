@@ -129,17 +129,20 @@ export const createHarness = async () => {
     },
   };
 
-  /** Sends a request and waits for its background work (event recording). */
+  /**
+   * Sends a request and waits for its background work (event recording). `cf` stands in
+   * for the facts Cloudflare attaches to a request (network, country).
+   */
   const call = async (
     route: string,
-    init: RequestInit = {}
+    init: RequestInit = {},
+    cf?: Request["cf"]
   ): Promise<Response> => {
-    const response = await app.request(
-      `${ORIGIN}${route}`,
-      init,
-      env,
-      executionCtx
-    );
+    const request = new Request(`${ORIGIN}${route}`, init);
+    if (cf) {
+      Object.defineProperty(request, "cf", { value: cf });
+    }
+    const response = await app.request(request, undefined, env, executionCtx);
     await Promise.all(pending.splice(0));
     return response;
   };
@@ -184,11 +187,14 @@ export const createHarness = async () => {
 
   const hit = async (
     url: string | undefined,
-    headers: Record<string, string> = {}
+    headers: Record<string, string> = {},
+    cf?: Request["cf"]
   ): Promise<Response> =>
-    await call(new URL(url ?? "", ORIGIN).pathname, {
-      headers: { "User-Agent": BROWSER, ...headers },
-    });
+    await call(
+      new URL(url ?? "", ORIGIN).pathname,
+      { headers: { "User-Agent": BROWSER, ...headers } },
+      cf
+    );
 
   const rows = (sql: string): unknown[] => db.sqlite.query(sql).all();
 

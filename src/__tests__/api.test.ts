@@ -35,7 +35,7 @@ describe("POST /api/messages", () => {
       "https://example.org/a",
       "https://example.net/",
     ]);
-    expect(result.imageUrl).toBe(`${ORIGIN}/i/${result.token}`);
+    expect(result.imageUrl).toBe(`${ORIGIN}/i/${result.token}.png`);
     expect(result.links.map((l) => l.url)).toEqual([
       "https://example.org/a",
       "https://example.net/",

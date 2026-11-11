@@ -1,5 +1,5 @@
 import { checkDestination } from "../../src/destinations";
-import type { Registration } from "./registry";
+import type { TokenSet } from "./registry";
 
 /** Quoted earlier messages; their links are left as they were (like Mailspring's own tracking). */
 const QUOTE = ".gmail_quote";
@@ -34,13 +34,25 @@ const removePixels = (root: ParentNode, origin: string): void => {
 };
 
 /**
- * Applies a registration synchronously: links whose URL was registered point at their
- * redirect, every other link is left untouched, and the image goes before any quoted text.
- * Returns the number of links rewritten.
+ * The tracking image, marked up like Mailspring's own (open-tracking-composer-extension.ts):
+ * `<img alt="" src="….png">` with no width, height, style or class, which are what pixel
+ * blockers look for. The Worker serves a transparent 1x1 PNG, so it stays invisible.
  */
-export const applyRegistration = (
+export const pixel = (doc: Document, imageUrl: string): HTMLImageElement => {
+  const img = doc.createElement("img");
+  img.setAttribute("alt", "");
+  img.setAttribute("src", imageUrl);
+  return img;
+};
+
+/**
+ * Applies one recipient's token set synchronously: links whose URL was registered point at
+ * their redirect, every other link is left untouched, and the image goes before any quoted
+ * text. Returns the number of links rewritten.
+ */
+export const applyTokenSet = (
   root: HTMLElement,
-  entry: Registration,
+  entry: TokenSet,
   origin: string
 ): number => {
   removePixels(root, origin);
@@ -53,12 +65,7 @@ export const applyRegistration = (
       rewritten += 1;
     }
   }
-  const img = root.ownerDocument.createElement("img");
-  img.setAttribute("src", entry.imageUrl);
-  img.setAttribute("width", "1");
-  img.setAttribute("height", "1");
-  img.setAttribute("alt", "");
-  img.setAttribute("style", "border:0;width:1px;height:1px;");
+  const img = pixel(root.ownerDocument, entry.imageUrl);
   const quote = root.querySelector(QUOTE);
   if (quote?.parentNode) {
     quote.parentNode.insertBefore(img, quote);

@@ -11,6 +11,7 @@ declare module "mailspring-exports" {
   /** A draft as Mailspring hands it to extensions (see app/src/flux/models/message.ts). */
   export class Message {
     headerMessageId: string;
+    accountId: string;
     draft: boolean;
     plaintext: boolean;
     body?: string;
@@ -35,6 +36,20 @@ declare module "mailspring-exports" {
   export class ComposerExtension {
     static applyTransformsForSending(args: SendTransformArgs): void;
   }
+
+  /** An account (app/src/flux/models/account.ts), reduced to what the plugin uses. */
+  export interface Account {
+    /**
+     * True when Mailspring sends through Microsoft Graph: one body for all recipients,
+     * transformed once with a null recipient (send-draft-task.ts). Optional, as releases
+     * before Graph sending lack it.
+     */
+    sendsViaGraph?: () => boolean;
+  }
+  export interface AccountStoreApi {
+    accountForId: (id: string) => Account | null | undefined;
+  }
+  export const AccountStore: AccountStoreApi;
 
   /** Props Mailspring passes to `Composer:Footer` components (composer-view.tsx). */
   export interface ComposerFooterProps {

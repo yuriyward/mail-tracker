@@ -1,8 +1,11 @@
 import { Hono } from "hono";
 
 import { readAuth, writeAuth } from "./auth";
+import { recipientTotals } from "./dashboard-data";
 import { checkDestination } from "./destinations";
 import type { AppEnv } from "./env";
+import { forwardingHints } from "./forwarding";
+import { tokenSetAddresses } from "./recipients";
 import { mintRequest, sentRequest } from "./schema";
 import type { MintRequest } from "./schema";
 import {
@@ -11,6 +14,7 @@ import {
   messageDetail,
   registerMessage,
 } from "./store";
+import type { RecipientSet } from "./store";
 import { isToken, newToken } from "./tokens";
 
 const LIST_LIMIT = 500;
@@ -35,6 +39,45 @@ const checkLinks = (request: MintRequest, ownHost: string): Checked => {
   }
   return { links, ok: true };
 };
+
+interface MintedLink {
+  url: string;
+  redirectUrl: string;
+}
+
+/** Redirect URLs for the submitted destinations, in their order, from url-to-token pairs. */
+const redirects = (
+  origin: string,
+  submitted: string[],
+  tokens: ReadonlyMap<string, string>
+): MintedLink[] =>
+  submitted.flatMap((url) => {
+    const token = tokens.get(url);
+    return token === undefined
+      ? []
+      : [{ redirectUrl: `${origin}/l/${token}`, url }];
+  });
+
+/** One recipient's image and links; `address` is '' for a shared copy to several people. */
+const mintedSet = (
+  origin: string,
+  submitted: string[],
+  urlOf: ReadonlyMap<string, string>,
+  set: RecipientSet
+) => ({
+  address: set.recipient.address,
+  imageUrl: `${origin}/i/${set.recipient.token}.png`,
+  links: redirects(
+    origin,
+    submitted,
+    new Map(
+      set.links.flatMap((rl) => {
+        const url = urlOf.get(rl.link_token);
+        return url === undefined ? [] : [[url, rl.token] as const];
+      })
+    )
+  ),
+});
 
 /** The authenticated API: mint tracking for one outgoing email, and read engagement. */
 export const apiRoutes = (now: () => number) => {
@@ -64,21 +107,27 @@ export const apiRoutes = (now: () => number) => {
       links: submitted,
       newToken,
       recipient: body.data.recipient,
+      recipients: tokenSetAddresses(body.data.recipients, body.data.shared),
+      shared: body.data.shared,
       subject: body.data.subject,
     });
-    const tokens = new Map(
-      registered.links.map((link) => [link.url, link.token])
-    );
     const { token } = registered.message;
+    const urlOf = new Map(
+      registered.links.map((link) => [link.token, link.url])
+    );
     return c.json(
       {
-        imageUrl: `${origin}/i/${token}`,
-        links: submitted.flatMap((url) => {
-          const linkToken = tokens.get(url);
-          return linkToken === undefined
-            ? []
-            : [{ redirectUrl: `${origin}/l/${linkToken}`, url }];
-        }),
+        // Message-level tokens, for callers that do not send `recipients`.
+        imageUrl: `${origin}/i/${token}.png`,
+        links: redirects(
+          origin,
+          submitted,
+          new Map(registered.links.map((link) => [link.url, link.token]))
+        ),
+        recipients: registered.recipients.map((set) =>
+          mintedSet(origin, submitted, urlOf, set)
+        ),
+        shared: registered.message.shared === 1,
         token,
       },
       registered.created ? 201 : 200
@@ -108,10 +157,26 @@ export const apiRoutes = (now: () => number) => {
     c.json({ messages: await listMessages(c.env.DB, LIST_LIMIT) })
   );
 
+  /**
+   * The raw rows, plus per-recipient figures and, on each event, `hint`: the forwarding
+   * hint with its reason, or null (src/forwarding.ts).
+   */
   app.get("/messages/:token", readAuth, async (c) => {
     const token = c.req.param("token");
     const detail = isToken(token) ? await messageDetail(c.env.DB, token) : null;
-    return detail ? c.json(detail) : c.json({ error: "not found" }, 404);
+    if (!detail) {
+      return c.json({ error: "not found" }, 404);
+    }
+    const hints = forwardingHints(detail.recipients, detail.events);
+    return c.json({
+      events: detail.events.map((e) => ({
+        ...e,
+        hint: hints.get(e.id) ?? null,
+      })),
+      links: detail.links,
+      message: detail.message,
+      recipients: recipientTotals(detail.recipients, detail.events, hints),
+    });
   });
 
   return app;

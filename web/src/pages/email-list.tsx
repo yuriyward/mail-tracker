@@ -23,6 +23,7 @@ import {
   LIST_COLUMNS,
   LIST_SORTING,
   OPEN_STATES,
+  openedByOf,
   rowModels,
 } from "../lib/tables";
 import { FilteredTable, sortHeader } from "../table-parts";
@@ -85,6 +86,12 @@ const COLUMNS: ColumnDef<ListMessage>[] = [
   {
     ...LIST_COLUMNS.clicks,
     header: sortHeader<ListMessage>("Clicks"),
+    meta: END,
+  },
+  {
+    ...LIST_COLUMNS.openedBy,
+    cell: ({ row }) => openedByOf(row.original),
+    header: sortHeader<ListMessage>("Opened by"),
     meta: END,
   },
   LIST_COLUMNS.status,

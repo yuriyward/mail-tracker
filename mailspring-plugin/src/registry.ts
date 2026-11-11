@@ -17,14 +17,28 @@ export interface ConfigStore {
   set: (keyPath: string, value: JsonValue | undefined) => void;
 }
 
+const tokenSet = z.object({
+  imageUrl: z.string(),
+  /** Normalised destination URL to its redirect URL. */
+  links: z.record(z.string(), z.string()),
+});
+/** One recipient's image and redirects (ADR-0003). */
+export type TokenSet = z.infer<typeof tokenSet>;
+
+/**
+ * A registered draft. Entries in the format before per-recipient tokens do not parse, so
+ * such a draft counts as unregistered and registers again when a composer shows it.
+ */
 const registration = z.object({
   draftId: z.string(),
   /** What was registered (subject, recipients, URLs); see snapshot.ts. */
   fingerprint: z.string(),
-  imageUrl: z.string(),
-  /** Normalised destination URL to its redirect URL. */
-  links: z.record(z.string(), z.string()),
+  /** Normalised address to its token set; '' for one shared by several recipients. */
+  recipients: z.record(z.string(), tokenSet),
   savedAt: z.number(),
+  /** Registered for an account that sends one body to all (Microsoft Graph). */
+  shared: z.boolean(),
+  /** The message token, for marking it sent. */
   token: z.string(),
 });
 export type Registration = z.infer<typeof registration>;

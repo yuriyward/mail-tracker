@@ -11,6 +11,10 @@
 
 Not a user: anyone sending newsletters, campaigns or bulk mail. Recipients never interact with it beyond loading an image or following a link.
 
+## Direction
+
+Mailspring Pro's tracking is the baseline, not the ceiling: match it, then do better (owner, 2026-11-11). Per-recipient tracking: ADR-0003.
+
 ## Never
 
 - **N1** Send mail. Drafts only; the owner sends from his own client (ADR-0001).

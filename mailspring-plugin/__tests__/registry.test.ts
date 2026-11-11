@@ -53,7 +53,9 @@ describe("registration while composing", () => {
     expect(f.requests).toHaveLength(2);
     expect(f.h.rows("SELECT COUNT(*) AS n FROM messages")).toEqual([{ n: 1 }]);
     expect(
-      lookup(f.config, DRAFT_ID)?.links["https://example.org/new"]
+      lookup(f.config, DRAFT_ID)?.recipients["alex@example.com"]?.links[
+        "https://example.org/new"
+      ]
     ).toStartWith(`${ORIGIN}/l/`);
   });
 
@@ -96,8 +98,14 @@ describe("registration while composing", () => {
     f.state.transport = async () =>
       await Promise.resolve({
         body: JSON.stringify({
-          imageUrl: "https://elsewhere.example/i/x",
-          links: [],
+          recipients: [
+            {
+              address: "alex@example.com",
+              imageUrl: "https://elsewhere.example/i/x.png",
+              links: [],
+            },
+          ],
+          shared: false,
           token: "t",
         }),
         status: 201,

@@ -7,6 +7,7 @@ import type { JwksSource } from "./auth";
 import { listMessage, messageTotals, timelineEvent } from "./dashboard-data";
 import type { DetailData, ListData } from "./dashboard-data";
 import type { AppEnv, Db } from "./env";
+import { forwardingHints } from "./forwarding";
 import { listMessages, messageDetail } from "./store";
 import type { MessageDetail } from "./store";
 import { isToken } from "./tokens";
@@ -49,17 +50,23 @@ const listData = async (db: Db, now: number): Promise<ListData> => {
 };
 
 const detailData = (detail: MessageDetail, now: number): DetailData => {
-  const { message, links, events } = detail;
-  const urls = new Map(links.map((link) => [link.token, link.url]));
+  const { message, links, recipients, events } = detail;
+  const hints = forwardingHints(recipients, events);
+  const context = {
+    addresses: new Map(recipients.map((r) => [r.token, r.address])),
+    hints,
+    urls: new Map(links.map((link) => [link.token, link.url])),
+  };
   return {
     message: {
       recipient: message.recipient,
       sentAt: message.sent_at,
+      shared: message.shared === 1,
       subject: message.subject,
       token: message.token,
     },
-    timeline: events.map((e) => timelineEvent(e, urls)),
-    totals: messageTotals(links, events),
+    timeline: events.map((e) => timelineEvent(e, context)),
+    totals: messageTotals({ events, hints, links, recipients }),
     updated: now,
   };
 };

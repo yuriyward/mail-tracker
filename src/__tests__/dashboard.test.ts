@@ -242,6 +242,8 @@ describe("per-email totals", () => {
       firstOpen,
       lastOpen,
       opens: { counted: 2, human: 1, notCounted: 2, proxy: 1 },
+      // Registered without recipients (message-level tokens), as before ADR-0003.
+      recipients: [],
     });
     expect(data.timeline.map((e) => [e.kind, e.class, e.duplicate])).toEqual([
       ["open", "proxy", false],
@@ -257,6 +259,7 @@ describe("per-email totals", () => {
     expect(data.message).toEqual({
       recipient: "alex@example.com",
       sentAt: sentRow.sent_at,
+      shared: false,
       subject: "Proposal",
       token: sent.token,
     });
@@ -281,6 +284,7 @@ describe("per-email totals", () => {
       firstOpen: null,
       lastOpen: null,
       opens: { counted: 0, human: 0, notCounted: 0, proxy: 0 },
+      recipients: [],
     });
     expect(data.timeline).toEqual([]);
   });

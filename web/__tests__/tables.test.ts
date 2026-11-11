@@ -14,6 +14,7 @@ import {
   TIMELINE_COLUMNS,
   TIMELINE_SORTING,
   openStatesOf,
+  openedByOf,
   rowModels,
 } from "../src/lib/tables";
 import type { ColumnLogic } from "../src/lib/tables";
@@ -57,9 +58,13 @@ const message = (token: string, m: Partial<ListMessage>): ListMessage => ({
   clicks: 0,
   firstOpen: null,
   lastOpen: null,
+  openedBy: 0,
   opens: 0,
   recipient: `${token}@example.test`,
+  recipientUnknown: false,
+  recipients: 1,
   sentAt: null,
+  shared: false,
   subject: `Subject ${token}`,
   token,
   ...m,
@@ -221,10 +226,12 @@ const event = (id: number, e: Partial<TimelineEvent>): TimelineEvent => ({
   counted: true,
   country: "",
   duplicate: false,
+  hint: null,
   id,
   kind: "open",
   network: "",
   reason: "synthetic",
+  recipient: null,
   url: null,
   userAgent: "",
   ...e,
@@ -284,5 +291,20 @@ describe("timeline", () => {
       scanner: 1,
       self: 1,
     });
+  });
+});
+
+describe("opened by", () => {
+  test("counts recipients, and says when a shared copy hides who opened", () => {
+    expect(openedByOf(message("x", { openedBy: 2, recipients: 3 }))).toBe(
+      "2 of 3"
+    );
+    expect(openedByOf(message("x", { recipients: 0 }))).toBe("—");
+    expect(
+      openedByOf(message("x", { openedBy: 1, recipientUnknown: true }))
+    ).toBe("opened, recipient unknown");
+    expect(openedByOf(message("x", { recipientUnknown: true }))).toBe(
+      "shared copy"
+    );
   });
 });

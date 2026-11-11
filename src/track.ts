@@ -11,14 +11,16 @@ import type { AppEnv } from "./env";
 import {
   countOtherLinksInBurst,
   findLink,
-  findMessage,
+  findPixel,
   insertEvent,
 } from "./store";
 import { isToken } from "./tokens";
 
-/** A transparent 1x1 GIF. */
+/** A transparent 1x1 PNG, served at `/i/<token>.png` like Mailspring's own image (ADR-0003). */
 const PIXEL = Uint8Array.from(
-  atob("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"),
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=="
+  ),
   (ch) => ch.codePointAt(0) ?? 0
 );
 
@@ -56,6 +58,7 @@ const ownerVerified = async (
 interface Target {
   messageToken: string;
   linkToken: string | null;
+  recipientToken: string | null;
   sentAt: number;
 }
 
@@ -99,6 +102,7 @@ const record = async (
     message_token: messageToken,
     method: facts.method,
     reason: result.reason,
+    recipient_token: target.recipientToken,
     user_agent: facts.userAgent,
   });
 };
@@ -123,16 +127,18 @@ export const trackRoutes = (now: () => number, jwks: JwksSource) => {
   const app = new Hono<AppEnv>();
 
   app.get("/i/:token", (c) => {
-    const token = c.req.param("token").replace(/\.gif$/u, "");
+    // `.png` is what the plugin writes; bare and `.gif` tokens come from older emails.
+    const token = c.req.param("token").replace(/\.(?:png|gif)$/u, "");
     const at = now();
     if (isToken(token)) {
       inBackground(c, async () => {
-        const message = await findMessage(c.env.DB, token);
-        if (message) {
+        const pixel = await findPixel(c.env.DB, token);
+        if (pixel) {
           await record(c, jwks, at, {
             linkToken: null,
-            messageToken: token,
-            sentAt: message.sent_at ?? message.created_at,
+            messageToken: pixel.message_token,
+            recipientToken: pixel.recipient_token,
+            sentAt: pixel.sent_at,
           });
         }
       });
@@ -140,7 +146,7 @@ export const trackRoutes = (now: () => number, jwks: JwksSource) => {
     // Unknown tokens get the same image, so the route reveals nothing about which exist.
     return c.body(PIXEL, 200, {
       "Cache-Control": NO_STORE,
-      "Content-Type": "image/gif",
+      "Content-Type": "image/png",
       Expires: "0",
       Pragma: "no-cache",
     });
@@ -158,6 +164,7 @@ export const trackRoutes = (now: () => number, jwks: JwksSource) => {
       await record(c, jwks, at, {
         linkToken: link.token,
         messageToken: link.message_token,
+        recipientToken: link.recipient_token,
         sentAt: link.sent_at,
       });
     });

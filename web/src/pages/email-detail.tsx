@@ -26,9 +26,10 @@ import {
 
 import { CLASS_LABELS, EVENT_CLASSES } from "../../../src/classify";
 import type { EventClass } from "../../../src/classify";
-import { detailDataSchema } from "../../../src/dashboard-data";
+import { detailDataSchema, recipientLabel } from "../../../src/dashboard-data";
 import type {
   DetailData,
+  RecipientTotals,
   TimelineEvent,
   Totals,
 } from "../../../src/dashboard-data";
@@ -124,6 +125,70 @@ const LinkClicks = ({ totals }: { totals: Totals }) => {
   );
 };
 
+/** Who opened and clicked: one row per recipient's token set. */
+const Recipients = ({ recipients }: { recipients: RecipientTotals[] }) => {
+  if (recipients.length === 0) {
+    return (
+      <Empty className="border p-8">
+        <EmptyHeader>
+          <EmptyTitle>No per-recipient tracking</EmptyTitle>
+          <EmptyDescription>
+            This email was tracked with one image and one set of links for
+            everyone, so opens and clicks cannot be told apart by recipient.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Recipient</TableHead>
+          <TableHead className="text-right">Opens</TableHead>
+          <TableHead className="text-right">Clicks</TableHead>
+          <TableHead className="text-right">First open</TableHead>
+          <TableHead className="text-right">Last open</TableHead>
+          <TableHead>Forwarding</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {recipients.map((r) => (
+          <TableRow key={r.token}>
+            <TableCell className="max-w-[40ch] truncate">
+              {recipientLabel(r.address)}
+              {!r.current && (
+                <Badge className="ml-2" variant="ghost">
+                  removed before sending
+                </Badge>
+              )}
+            </TableCell>
+            <TableCell className="text-right">{r.opens}</TableCell>
+            <TableCell className="text-right">{r.clicks}</TableCell>
+            <TableCell className="type-meta text-right">
+              <When ms={r.firstOpen} none="—" />
+            </TableCell>
+            <TableCell className="type-meta text-right">
+              <When ms={r.lastOpen} none="—" />
+            </TableCell>
+            <TableCell>
+              {r.hints > 0 ? (
+                <Badge variant="secondary">
+                  {r.hints === 1
+                    ? "1 event possibly forwarded"
+                    : `${r.hints} events possibly forwarded`}
+                </Badge>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+};
+
 const clientOf = (e: TimelineEvent): string =>
   [e.userAgent, e.network, e.country].filter((part) => part !== "").join(" · ");
 
@@ -164,16 +229,39 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
           {CLASS_LABELS[row.original.class]}
         </Badge>
         {row.original.duplicate && <Badge variant="ghost">repeat</Badge>}
+        {row.original.hint !== null && (
+          <Badge title={row.original.hint} variant="secondary">
+            possibly forwarded
+          </Badge>
+        )}
       </span>
     ),
     header: "Class",
   },
   {
-    cell: ({ row }) => (
-      <span className={TRUNCATE} title={row.original.reason}>
-        {row.original.reason}
-      </span>
-    ),
+    cell: ({ row }) => {
+      const { recipient } = row.original;
+      const label = recipient === null ? "—" : recipientLabel(recipient);
+      return (
+        <span className={TRUNCATE} title={label}>
+          {label}
+        </span>
+      );
+    },
+    header: "Recipient",
+    id: "recipient",
+  },
+  {
+    cell: ({ row }) => {
+      const reason = [row.original.reason, row.original.hint]
+        .filter((part) => part !== null)
+        .join("; ");
+      return (
+        <span className={TRUNCATE} title={reason}>
+          {reason}
+        </span>
+      );
+    },
     header: "Reason",
     id: "reason",
   },
@@ -256,7 +344,14 @@ const Detail = ({ data, stale }: { data: DetailData; stale: boolean }) => {
       <Updated ms={data.updated} />
       {stale && <StaleAlert ms={data.updated} />}
       <KeyValueList>
-        <KeyValueRow term="To">{message.recipient}</KeyValueRow>
+        <KeyValueRow term="To">
+          {message.recipient}
+          {message.shared && (
+            <Badge className="ml-2" variant="outline">
+              one shared copy (Microsoft Graph)
+            </Badge>
+          )}
+        </KeyValueRow>
         <KeyValueRow term="Sent">
           <When ms={message.sentAt} none="Not marked sent" />
         </KeyValueRow>
@@ -268,6 +363,17 @@ const Detail = ({ data, stale }: { data: DetailData; stale: boolean }) => {
         </KeyValueRow>
       </KeyValueList>
       <TotalsRow totals={totals} />
+      <section className="flex flex-col gap-4">
+        <h2 className="type-article-h3">Recipients</h2>
+        <Recipients recipients={totals.recipients} />
+        <p className="type-caption text-muted-foreground max-w-[90ch]">
+          Each recipient gets their own image and links. &ldquo;Possibly
+          forwarded&rdquo; marks a later probable-human event from another
+          network, country or kind of device than that recipient&apos;s first
+          one: a hint, not proof, since the same person may switch networks or
+          devices.
+        </p>
+      </section>
       <section className="flex flex-col gap-4">
         <h2 className="type-article-h3">Clicks per link</h2>
         <LinkClicks totals={totals} />

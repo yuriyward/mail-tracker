@@ -1,4 +1,5 @@
 import {
+  AccountStore,
   Actions,
   ComponentRegistry,
   ComposerExtension,
@@ -6,7 +7,11 @@ import {
   PreferencesUIStore,
   React,
 } from "mailspring-exports";
-import type { ComposerFooterProps, FooterComponent } from "mailspring-exports";
+import type {
+  ComposerFooterProps,
+  FooterComponent,
+  Message,
+} from "mailspring-exports";
 
 import { createExtension } from "./extension";
 import { MailTrackerPreferences } from "./preferences";
@@ -31,10 +36,15 @@ const config: ConfigStore = {
   },
 };
 
+/** The same test Mailspring's SendDraftTask.forSending makes (send-draft-task.ts). */
+const sendsViaGraph = (draft: Message): boolean =>
+  AccountStore.accountForId(draft.accountId)?.sendsViaGraph?.() === true;
+
 const tracker = createTracker({
   config,
   log,
   now: Date.now,
+  sendsViaGraph,
   setTimer: (run, ms) => {
     const timer = setTimeout(run, ms);
     return () => {
@@ -48,6 +58,7 @@ const tracker = createTracker({
 const MailTrackerExtension = createExtension(ComposerExtension, {
   config,
   log,
+  sendsViaGraph,
   settings,
 });
 

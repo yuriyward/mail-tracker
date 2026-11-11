@@ -95,6 +95,20 @@ export const openStatesOf = (m: ListMessage): string[] => {
   return states;
 };
 
+/**
+ * How many recipients opened or clicked, of how many: "2 of 3". A shared copy (Graph) to
+ * several people cannot tell them apart; emails from before per-recipient tokens have none.
+ */
+export const openedByOf = (m: ListMessage): string => {
+  if (m.recipients === 0) {
+    return "—";
+  }
+  if (m.recipientUnknown) {
+    return m.openedBy > 0 ? "opened, recipient unknown" : "shared copy";
+  }
+  return `${m.openedBy} of ${m.recipients}`;
+};
+
 /** Hidden: it carries the "opened / not opened / clicked" filter. */
 const status: ColumnLogic<ListMessage> = {
   accessorFn: openStatesOf,
@@ -109,6 +123,7 @@ export const LIST_COLUMNS = {
   clicks: count<ListMessage>("clicks", (m) => m.clicks),
   firstOpen: moment<ListMessage>("firstOpen", (m) => m.firstOpen),
   lastOpen: moment<ListMessage>("lastOpen", (m) => m.lastOpen),
+  openedBy: count<ListMessage>("openedBy", (m) => m.openedBy),
   opens: count<ListMessage>("opens", (m) => m.opens),
   recipient: text<ListMessage>("recipient", (m) => m.recipient),
   sent: moment<ListMessage>("sent", (m) => m.sentAt),
