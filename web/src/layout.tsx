@@ -36,7 +36,7 @@ export const Layout = ({
 /** When the data on screen was read; announced politely as it changes. */
 export const Updated = ({ ms }: { ms: number }) => (
   <p aria-live="polite" className="type-meta text-muted-foreground">
-    Updated {clockOf(ms)}, refreshes every 15 s while open
+    Updated {clockOf(ms)}
   </p>
 );
 
@@ -45,8 +45,7 @@ export const StaleAlert = ({ ms }: { ms: number }) => (
   <Alert variant="destructive">
     <AlertTitle>Refresh failed</AlertTitle>
     <AlertDescription>
-      Showing data from {clockOf(ms)}. Retrying every 15 s; reload the page if
-      this persists (your Access session may have expired).
+      Showing data from {clockOf(ms)}. Reload the page if this persists.
     </AlertDescription>
   </Alert>
 );
@@ -54,10 +53,7 @@ export const StaleAlert = ({ ms }: { ms: number }) => (
 export const LoadFailed = () => (
   <Alert variant="destructive">
     <AlertTitle>Could not load the data</AlertTitle>
-    <AlertDescription>
-      Retrying every 15 s; reload the page if this persists (your Access session
-      may have expired).
-    </AlertDescription>
+    <AlertDescription>Reload the page if this persists.</AlertDescription>
   </Alert>
 );
 

@@ -6,12 +6,7 @@ import {
   DataTableFacetedFilter,
   DataTableSearch,
 } from "@/components/patterns/data-table-filters";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { listDataSchema } from "../../../src/dashboard-data";
@@ -121,17 +116,13 @@ const Messages = ({ messages }: { messages: ListMessage[] }) => {
       <Empty className="border p-8">
         <EmptyHeader>
           <EmptyTitle>No sent emails yet</EmptyTitle>
-          <EmptyDescription>
-            An email appears here once the Mailspring plugin reports it
-            delivered, or when its first open or click arrives.
-          </EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
   }
   return (
     <FilteredTable
-      caption="Tracked emails. Column headers sort the rows."
+      caption="Emails"
       noMatch="No emails match"
       noun={["email", "emails"]}
       table={table}
@@ -190,10 +181,5 @@ export const EmailList = () => (
   <section className="flex flex-col gap-6">
     <h1 className="type-section">Emails</h1>
     <Body />
-    <p className="type-caption text-muted-foreground max-w-[90ch]">
-      Opens and clicks count probable humans and on-open image proxies;
-      prefetches, scanners, your own hits and repeats appear only in each
-      email&apos;s timeline.
-    </p>
   </section>
 );

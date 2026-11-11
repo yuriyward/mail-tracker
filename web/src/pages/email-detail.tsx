@@ -3,17 +3,8 @@ import type { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";
 import { useState } from "react";
 
 import { DataTableFacetedFilter } from "@/components/patterns/data-table-filters";
-import {
-  KeyValueList,
-  KeyValueRow,
-} from "@/components/patterns/key-value-list";
 import { Badge } from "@/components/ui/badge";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -42,6 +33,7 @@ import {
   TIMELINE_SORTING,
   rowModels,
 } from "../lib/tables";
+import { Summary } from "../summary";
 import { FilteredTable, sortHeader } from "../table-parts";
 
 const CLASS_BADGE: Record<EventClass, "default" | "secondary" | "outline"> = {
@@ -52,7 +44,7 @@ const CLASS_BADGE: Record<EventClass, "default" | "secondary" | "outline"> = {
   unknown: "outline",
 };
 
-/** The per-email figures in one compact row, with the counting rule under it. */
+/** The per-email figures in one compact row. */
 const TotalsRow = ({ totals }: { totals: Totals }) => {
   const { opens, clicks } = totals;
   const figures = [
@@ -63,67 +55,44 @@ const TotalsRow = ({ totals }: { totals: Totals }) => {
     { label: "Not counted", value: opens.notCounted + clicks.notCounted },
   ];
   return (
-    <div className="flex flex-col gap-2">
-      <dl className="border-border flex flex-wrap items-baseline gap-x-8 gap-y-2 border-y py-3">
-        {figures.map((figure) => (
-          <div className="flex items-baseline gap-2" key={figure.label}>
-            <dt className="type-meta text-muted-foreground">{figure.label}</dt>
-            <dd className="font-medium tabular-nums">{figure.value}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="type-caption text-muted-foreground max-w-[90ch]">
-        Counts leave out prefetches, scanners, your own hits, unknown clients
-        and repeats by the same client within 30 s ({opens.notCounted} opens and{" "}
-        {clicks.notCounted} clicks here); the timeline shows every event. Image
-        proxies (e.g. Gmail) fetch when the recipient opens.
-      </p>
-    </div>
+    <dl className="border-border flex flex-wrap items-baseline gap-x-8 gap-y-2 border-y py-3">
+      {figures.map((figure) => (
+        <div className="flex items-baseline gap-2" key={figure.label}>
+          <dt className="type-meta text-muted-foreground">{figure.label}</dt>
+          <dd className="font-medium tabular-nums">{figure.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 };
 
-const LinkClicks = ({ totals }: { totals: Totals }) => {
-  const { links } = totals.clicks;
-  if (links.length === 0) {
-    return (
-      <Empty className="border p-8">
-        <EmptyHeader>
-          <EmptyTitle>No tracked links</EmptyTitle>
-          <EmptyDescription>
-            This email went out without https links, so only opens are tracked.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Link</TableHead>
-          <TableHead className="text-right">Clicks</TableHead>
-          <TableHead className="text-right">Not counted</TableHead>
+const LinkClicks = ({ links }: { links: Totals["clicks"]["links"] }) => (
+  <Table>
+    <TableHeader>
+      <TableRow>
+        <TableHead>Link</TableHead>
+        <TableHead className="text-right">Clicks</TableHead>
+        <TableHead className="text-right">Not counted</TableHead>
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      {links.map((link) => (
+        <TableRow key={link.token}>
+          <TableCell
+            className="max-w-[60ch] truncate font-mono text-sm"
+            title={link.url}
+          >
+            {link.url}
+          </TableCell>
+          <TableCell className="text-right">{link.clicks}</TableCell>
+          <TableCell className="text-muted-foreground text-right">
+            {link.notCounted}
+          </TableCell>
         </TableRow>
-      </TableHeader>
-      <TableBody>
-        {links.map((link) => (
-          <TableRow key={link.token}>
-            <TableCell
-              className="max-w-[60ch] truncate font-mono text-sm"
-              title={link.url}
-            >
-              {link.url}
-            </TableCell>
-            <TableCell className="text-right">{link.clicks}</TableCell>
-            <TableCell className="text-muted-foreground text-right">
-              {link.notCounted}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-};
+      ))}
+    </TableBody>
+  </Table>
+);
 
 /** One row per recipient's token set: opens, clicks, open times and forwarding hints. */
 const RecipientTable = ({ rows }: { rows: RecipientTotals[] }) => (
@@ -174,19 +143,6 @@ const RecipientTable = ({ rows }: { rows: RecipientTotals[] }) => (
  * counts; recipients removed from the draft that still have activity are listed apart.
  */
 const Recipients = ({ recipients }: { recipients: RecipientTotals[] }) => {
-  if (recipients.length === 0) {
-    return (
-      <Empty className="border p-8">
-        <EmptyHeader>
-          <EmptyTitle>No per-recipient tracking</EmptyTitle>
-          <EmptyDescription>
-            This email was tracked with one image and one set of links for
-            everyone, so opens and clicks cannot be told apart by recipient.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
   const current = recipients.filter((r) => r.current);
   const removed = recipients.filter((r) => !r.current);
   return (
@@ -194,12 +150,7 @@ const Recipients = ({ recipients }: { recipients: RecipientTotals[] }) => {
       <RecipientTable rows={current} />
       {removed.length > 0 && (
         <>
-          <h3 className="type-meta">Removed recipients with activity</h3>
-          <p className="type-caption text-muted-foreground max-w-[90ch]">
-            These addresses were on an earlier version of the draft. Their
-            tokens still recorded events, which are not counted in the email
-            list&apos;s &ldquo;Opened by&rdquo;.
-          </p>
+          <h3 className="type-meta">Removed recipients</h3>
           <RecipientTable rows={removed} />
         </>
       )}
@@ -313,22 +264,9 @@ const Timeline = ({ events }: { events: TimelineEvent[] }) => {
   });
   const kind = table.getColumn("kind");
   const eventClass = table.getColumn("class");
-  if (events.length === 0) {
-    return (
-      <Empty className="border p-8">
-        <EmptyHeader>
-          <EmptyTitle>No opens or clicks yet</EmptyTitle>
-          <EmptyDescription>
-            Every hit on the image or a link appears here, classified, within 15
-            s while this page is open.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
   return (
     <FilteredTable
-      caption="Every open and click of this email. The When header sorts the rows."
+      caption="Timeline"
       noMatch="No events match"
       noun={["event", "events"]}
       table={table}
@@ -361,45 +299,26 @@ const Detail = ({ data, stale }: { data: DetailData; stale: boolean }) => {
       <h1 className="type-section break-words">{subjectOf(message.subject)}</h1>
       <Updated ms={data.updated} />
       {stale && <StaleAlert ms={data.updated} />}
-      <KeyValueList>
-        <KeyValueRow term="To">
-          {message.recipient}
-          {message.shared && (
-            <Badge className="ml-2" variant="outline">
-              one shared copy (Microsoft Graph)
-            </Badge>
-          )}
-        </KeyValueRow>
-        <KeyValueRow term="Sent">
-          <When ms={message.sentAt} none="Not marked sent" />
-        </KeyValueRow>
-        <KeyValueRow term="First open">
-          <When ms={totals.firstOpen} none="Not opened" />
-        </KeyValueRow>
-        <KeyValueRow term="Last open">
-          <When ms={totals.lastOpen} none="Not opened" />
-        </KeyValueRow>
-      </KeyValueList>
+      <Summary message={message} totals={totals} />
       <TotalsRow totals={totals} />
-      <section className="flex flex-col gap-4">
-        <h2 className="type-article-h3">Recipients</h2>
-        <Recipients recipients={totals.recipients} />
-        <p className="type-caption text-muted-foreground max-w-[90ch]">
-          Each recipient gets their own image and links. &ldquo;Possibly
-          forwarded&rdquo; marks a later probable-human event from another
-          network, country or kind of device than that recipient&apos;s first
-          one: a hint, not proof, since the same person may switch networks or
-          devices.
-        </p>
-      </section>
-      <section className="flex flex-col gap-4">
-        <h2 className="type-article-h3">Clicks per link</h2>
-        <LinkClicks totals={totals} />
-      </section>
-      <section className="flex flex-col gap-4">
-        <h2 className="type-article-h3">Timeline</h2>
-        <Timeline events={timeline} />
-      </section>
+      {totals.recipients.length > 0 && (
+        <section className="flex flex-col gap-4">
+          <h2 className="type-article-h3">Recipients</h2>
+          <Recipients recipients={totals.recipients} />
+        </section>
+      )}
+      {totals.clicks.links.length > 0 && (
+        <section className="flex flex-col gap-4">
+          <h2 className="type-article-h3">Clicks per link</h2>
+          <LinkClicks links={totals.clicks.links} />
+        </section>
+      )}
+      {timeline.length > 0 && (
+        <section className="flex flex-col gap-4">
+          <h2 className="type-article-h3">Timeline</h2>
+          <Timeline events={timeline} />
+        </section>
+      )}
     </>
   );
 };
@@ -408,10 +327,6 @@ const NotFound = () => (
   <Empty className="border p-8">
     <EmptyHeader>
       <EmptyTitle>Email not found</EmptyTitle>
-      <EmptyDescription>
-        No email has this address; it may come from another deployment.{" "}
-        <a href="/app">Back to all emails</a>
-      </EmptyDescription>
     </EmptyHeader>
   </Empty>
 );
@@ -453,7 +368,7 @@ const Body = ({ token }: { token: string }) => {
 };
 
 export const EmailDetail = ({ token }: { token: string }) => (
-  <article className="flex flex-col gap-8">
+  <article className="flex flex-col gap-6">
     <p>
       <a className={linkClass} href="/app">
         ← All emails

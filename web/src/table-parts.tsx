@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyContent,
-  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
@@ -81,9 +80,6 @@ export const FilteredTable = <T,>({
           <SearchXIcon />
         </EmptyMedia>
         <EmptyTitle>{noMatch}</EmptyTitle>
-        <EmptyDescription>
-          No row matches the search and filters.
-        </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
         <Button onClick={clear} variant="outline">
