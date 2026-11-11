@@ -27,6 +27,13 @@ const participants = (draft: Message): Contact[] => [
   ...(draft.bcc ?? []),
 ];
 
+/** The draft's recipients as token-set keys: normalised, distinct, in draft order. */
+export const recipientAddresses = (draft: Message): string[] =>
+  tokenSetAddresses(
+    participants(draft).map((contact) => contact.email),
+    false
+  );
+
 export const recipients = (draft: Message): string =>
   participants(draft)
     .map((contact) => contact.email)
@@ -41,10 +48,7 @@ export const snapshot = (
   draftId: draft.headerMessageId,
   links: trackableUrls(root, origin),
   recipient: recipients(draft),
-  recipients: tokenSetAddresses(
-    participants(draft).map((contact) => contact.email),
-    false
-  ),
+  recipients: recipientAddresses(draft),
   shared,
   subject: draft.subject ?? "",
 });

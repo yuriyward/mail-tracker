@@ -125,7 +125,54 @@ const LinkClicks = ({ totals }: { totals: Totals }) => {
   );
 };
 
-/** Who opened and clicked: one row per recipient's token set. */
+/** One row per recipient's token set: opens, clicks, open times and forwarding hints. */
+const RecipientTable = ({ rows }: { rows: RecipientTotals[] }) => (
+  <Table>
+    <TableHeader>
+      <TableRow>
+        <TableHead>Recipient</TableHead>
+        <TableHead className="text-right">Opens</TableHead>
+        <TableHead className="text-right">Clicks</TableHead>
+        <TableHead className="text-right">First open</TableHead>
+        <TableHead className="text-right">Last open</TableHead>
+        <TableHead>Forwarding</TableHead>
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      {rows.map((r) => (
+        <TableRow key={r.token}>
+          <TableCell className="max-w-[40ch] truncate">
+            {recipientLabel(r.address)}
+          </TableCell>
+          <TableCell className="text-right">{r.opens}</TableCell>
+          <TableCell className="text-right">{r.clicks}</TableCell>
+          <TableCell className="type-meta text-right">
+            <When ms={r.firstOpen} none="—" />
+          </TableCell>
+          <TableCell className="type-meta text-right">
+            <When ms={r.lastOpen} none="—" />
+          </TableCell>
+          <TableCell>
+            {r.hints > 0 ? (
+              <Badge variant="secondary">
+                {r.hints === 1
+                  ? "1 event possibly forwarded"
+                  : `${r.hints} events possibly forwarded`}
+              </Badge>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </TableCell>
+        </TableRow>
+      ))}
+    </TableBody>
+  </Table>
+);
+
+/**
+ * Who opened and clicked. Current recipients come first and are what the email list
+ * counts; recipients removed from the draft that still have activity are listed apart.
+ */
 const Recipients = ({ recipients }: { recipients: RecipientTotals[] }) => {
   if (recipients.length === 0) {
     return (
@@ -140,52 +187,23 @@ const Recipients = ({ recipients }: { recipients: RecipientTotals[] }) => {
       </Empty>
     );
   }
+  const current = recipients.filter((r) => r.current);
+  const removed = recipients.filter((r) => !r.current);
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Recipient</TableHead>
-          <TableHead className="text-right">Opens</TableHead>
-          <TableHead className="text-right">Clicks</TableHead>
-          <TableHead className="text-right">First open</TableHead>
-          <TableHead className="text-right">Last open</TableHead>
-          <TableHead>Forwarding</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {recipients.map((r) => (
-          <TableRow key={r.token}>
-            <TableCell className="max-w-[40ch] truncate">
-              {recipientLabel(r.address)}
-              {!r.current && (
-                <Badge className="ml-2" variant="ghost">
-                  removed before sending
-                </Badge>
-              )}
-            </TableCell>
-            <TableCell className="text-right">{r.opens}</TableCell>
-            <TableCell className="text-right">{r.clicks}</TableCell>
-            <TableCell className="type-meta text-right">
-              <When ms={r.firstOpen} none="—" />
-            </TableCell>
-            <TableCell className="type-meta text-right">
-              <When ms={r.lastOpen} none="—" />
-            </TableCell>
-            <TableCell>
-              {r.hints > 0 ? (
-                <Badge variant="secondary">
-                  {r.hints === 1
-                    ? "1 event possibly forwarded"
-                    : `${r.hints} events possibly forwarded`}
-                </Badge>
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <>
+      <RecipientTable rows={current} />
+      {removed.length > 0 && (
+        <>
+          <h3 className="type-meta">Removed recipients with activity</h3>
+          <p className="type-caption text-muted-foreground max-w-[90ch]">
+            These addresses were on an earlier version of the draft. Their
+            tokens still recorded events, which are not counted in the email
+            list&apos;s &ldquo;Opened by&rdquo;.
+          </p>
+          <RecipientTable rows={removed} />
+        </>
+      )}
+    </>
   );
 };
 

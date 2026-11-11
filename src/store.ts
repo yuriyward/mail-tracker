@@ -381,7 +381,10 @@ export const listMessages = async (
            (SELECT COUNT(*) FROM recipients r WHERE r.message_token = m.token AND r.current = 1) AS recipients,
            EXISTS (SELECT 1 FROM recipients r WHERE r.message_token = m.token AND r.current = 1
              AND r.address = '') AS recipient_unknown,
-           (SELECT COUNT(DISTINCT recipient_token) ${OF_MESSAGE} AND ${COUNTED}) AS opened_by
+           (SELECT COUNT(DISTINCT e.recipient_token) FROM events e
+             JOIN recipients r ON r.token = e.recipient_token
+             WHERE e.message_token = m.token AND r.current = 1
+               AND e.counted = 1 AND e.duplicate = 0) AS opened_by
          FROM messages m
          WHERE m.sent_at IS NOT NULL OR EXISTS (SELECT 1 ${OF_MESSAGE})
          ORDER BY COALESCE(m.sent_at, m.created_at) DESC LIMIT ?`

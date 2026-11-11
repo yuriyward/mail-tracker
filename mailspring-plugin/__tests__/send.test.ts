@@ -165,7 +165,7 @@ describe("send through Mailspring's synchronous caller", () => {
       })
     );
     expect(f.logs).toEqual([
-      "sending with an older registration: 1 link(s) added after registration stay untracked; subject or recipients changed after registration; the Worker keeps the registered ones",
+      "sending with an older registration: 1 link(s) added after registration stay untracked; subject changed after registration; the Worker keeps the registered one",
     ]);
   });
 
@@ -224,22 +224,75 @@ describe("send through Mailspring's synchronous caller", () => {
       { address: "boss@example.net", clicks: 0, opens: 0 },
     ]);
   });
+});
 
-  test("a recipient added after registration goes untracked; the others keep their tokens", async () => {
+describe("which tokens each body gets", () => {
+  test("addresses match case-insensitively and in any order", async () => {
     await f.compose();
-    const later = draft({
-      to: [{ email: "Alex@Example.com" }, { email: "new@example.org" }],
+    const reordered = draft({
+      bcc: [{ email: "Alex@Example.com" }],
+      to: [{ email: "BOSS@example.net" }],
     });
-    const task = f.send(later);
+    const task = f.send(reordered);
     const bodies = task.perRecipientBodies ?? {};
-    // Addresses match case-insensitively.
     expect(images(bodies["Alex@Example.com"] ?? "")[0]).toBe(
       setFor("alex@example.com").imageUrl
     );
-    expect(bodies["new@example.org"]).toBe(parse(BODY).innerHTML);
-    expect(f.logs).toContain(
-      "a recipient added after registration goes untracked"
+    expect(images(bodies["BOSS@example.net"] ?? "")[0]).toBe(
+      setFor("boss@example.net").imageUrl
     );
+    expect(f.logs).toEqual([]);
+  });
+
+  test("recipients changed after registration: the whole email goes untracked, logged once", async () => {
+    await f.compose();
+    const later = draft({
+      to: [{ email: "alex@example.com" }, { email: "new@example.org" }],
+    });
+    const task = f.send(later);
+    // No separate bodies, so no recipient gets anyone's tokens.
+    expect(task.perRecipientBodies).toBeNull();
+    expect(task.body).toBe(parse(BODY).innerHTML);
+    expect(f.logs).toEqual([
+      "recipients changed after registration; sent untracked",
+    ]);
+  });
+
+  // The review's reproduction: a Graph draft registered to Alex alone, then readdressed.
+  test("a shared set registered for one person is never sent to others", async () => {
+    f.state.graph = true;
+    const toAlex = draft({ bcc: [], cc: [] });
+    await f.compose(toAlex);
+    expect(Object.keys(lookup(f.config, DRAFT_ID)?.recipients ?? {})).toEqual([
+      "alex@example.com",
+    ]);
+    const alexTokens = [
+      setFor("alex@example.com").imageUrl,
+      ...Object.values(setFor("alex@example.com").links),
+    ];
+    const readdressed = [
+      draft({ bcc: [], cc: [{ email: "sam@example.net" }] }),
+      draft({ bcc: [], cc: [], to: [{ email: "kim@example.org" }] }),
+    ];
+    const graphBodies = readdressed.map((message) => f.send(message).body);
+    // The same draft moved to an SMTP account: one body per recipient.
+    f.state.graph = false;
+    const smtp = f.send(draft({ bcc: [], cc: [{ email: "sam@example.net" }] }));
+    const smtpAlone = f.send(toAlex);
+    const sent = [
+      ...graphBodies,
+      ...Object.values(smtp.perRecipientBodies ?? {}),
+      smtp.body,
+      ...Object.values(smtpAlone.perRecipientBodies ?? {}),
+      smtpAlone.body,
+    ].join("\n");
+    for (const url of alexTokens) {
+      expect(sent).not.toContain(url);
+    }
+    expect(f.logs).toEqual([
+      "recipients changed after registration; sent untracked",
+      "delivery mode (shared Graph body or one body each) changed after registration; sent untracked",
+    ]);
   });
 
   test("Graph accounts register one shared set, marked recipient unknown", async () => {
@@ -275,12 +328,13 @@ describe("send through Mailspring's synchronous caller", () => {
   test("switching to a Graph account re-registers as shared; a stale per-recipient one is not sent shared", async () => {
     await f.compose();
     // Graph only at send: one body for all would credit one person, so it goes untracked.
-    const task = f.send(draft(), true);
+    f.state.graph = true;
+    const task = f.send();
+    expect(task.perRecipientBodies).toBeNull();
     expect(task.body).toBe(parse(BODY).innerHTML);
     expect(f.logs).toEqual([
-      "one body for all recipients, but the draft was registered per recipient; sent untracked",
+      "delivery mode (shared Graph body or one body each) changed after registration; sent untracked",
     ]);
-    f.state.graph = true;
     await f.compose();
     expect(lookup(f.config, DRAFT_ID)?.shared).toBe(true);
     expect(

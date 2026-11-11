@@ -12,7 +12,7 @@ import type { ConfigStore, Registration, TokenSet } from "./registry";
 import { applyTokenSet } from "./rewrite";
 import { skipReason, trackerOrigin } from "./settings";
 import type { Settings } from "./settings";
-import { parseSnapshot, snapshot } from "./snapshot";
+import { parseSnapshot, recipientAddresses, snapshot } from "./snapshot";
 import type { Snapshot } from "./snapshot";
 
 export interface ExtensionDeps {
@@ -36,6 +36,33 @@ const active = (
   return entry ? { entry, origin } : null;
 };
 
+const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && new Set([...a, ...b]).size === a.length;
+
+/**
+ * Why the cached tokens no longer fit the draft as sent, or null when they do. Tokens are
+ * only used when the registration covers exactly the draft's current recipients and was
+ * made for the same delivery mode (one shared body under Graph, or one body each);
+ * anything else could credit one recipient's tokens to someone else.
+ */
+export const mismatch = (
+  draft: Message,
+  entry: Registration,
+  sendsViaGraph: boolean
+): string | null => {
+  const registered = parseSnapshot(entry.fingerprint);
+  if (
+    !registered ||
+    !sameSet(registered.recipients, recipientAddresses(draft))
+  ) {
+    return "recipients changed after registration; sent untracked";
+  }
+  if (registered.shared !== entry.shared || entry.shared !== sendsViaGraph) {
+    return "delivery mode (shared Graph body or one body each) changed after registration; sent untracked";
+  }
+  return null;
+};
+
 const differences = (
   sent: Snapshot,
   entry: Registration,
@@ -47,14 +74,9 @@ const differences = (
     late.length > 0
       ? [`${late.length} link(s) added after registration stay untracked`]
       : [];
-  const before = parseSnapshot(entry.fingerprint);
-  if (
-    before?.subject !== sent.subject ||
-    before.recipient !== sent.recipient ||
-    before.shared !== sent.shared
-  ) {
+  if (parseSnapshot(entry.fingerprint)?.subject !== sent.subject) {
     notes.push(
-      "subject or recipients changed after registration; the Worker keeps the registered ones"
+      "subject changed after registration; the Worker keeps the registered one"
     );
   }
   return notes;
@@ -63,10 +85,11 @@ const differences = (
 type Choice = { set: TokenSet } | { untracked: string };
 
 /**
- * The token set for the body Mailspring is building. A per-recipient call gets that
- * recipient's set; a shared registration (Graph) has one set, used for whatever body is
- * built. A null recipient on a per-recipient registration means Mailspring builds one
- * body for all after all, so that body goes out untracked rather than credit one person.
+ * The token set for the body Mailspring is building, once `mismatch` has confirmed the
+ * registration fits the draft. A shared registration (Graph) has one set for the one body;
+ * a per-recipient call gets that recipient's set. A null recipient on a per-recipient
+ * registration means Mailspring builds one body for all after all, so that body goes out
+ * untracked rather than credit one person.
  */
 const choose = (
   entry: Registration,
@@ -86,7 +109,7 @@ const choose = (
   const set = entry.recipients[normaliseAddress(recipient.email)];
   return set
     ? { set }
-    : { untracked: "a recipient added after registration goes untracked" };
+    : { untracked: "a recipient without registered tokens goes untracked" };
 };
 
 /**
@@ -132,7 +155,11 @@ export const createExtension = (
      */
     static needsPerRecipientBodies(draft: Message): boolean {
       try {
-        return active(draft, deps) !== null;
+        const tracked = active(draft, deps);
+        return (
+          tracked !== null &&
+          mismatch(draft, tracked.entry, deps.sendsViaGraph(draft)) === null
+        );
       } catch (error) {
         deps.log(`needsPerRecipientBodies failed: ${String(error)}`);
         return false;
@@ -151,6 +178,11 @@ export const createExtension = (
         }
         const tracked = active(draft, deps);
         if (!tracked) {
+          return;
+        }
+        const stale = mismatch(draft, tracked.entry, deps.sendsViaGraph(draft));
+        if (stale !== null) {
+          once(draft, stale);
           return;
         }
         const choice = choose(tracked.entry, recipient);

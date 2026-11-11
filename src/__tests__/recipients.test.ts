@@ -268,6 +268,24 @@ describe("events per recipient", () => {
     expect(body.events.map((e) => e.hint)).toEqual([null, null, null]);
   });
 
+  test("'Opened by' counts only current recipients; removed ones with activity stay on the email page", async () => {
+    const result = await sentTo(["alex@example.com", "sam@example.net"]);
+    await h.hit(setOf(result, "alex@example.com").imageUrl);
+    await h.hit(setOf(result, "sam@example.net").imageUrl);
+    // Sam is removed from the draft and it is registered again.
+    await register(["alex@example.com"]);
+    const listResponse = await h.call("/app/data", { headers: await owner() });
+    const listed = listDataSchema.parse(await listResponse.json());
+    expect(listed.messages[0]).toMatchObject({ openedBy: 1, recipients: 1 });
+    const data = await detail(result.token);
+    expect(
+      data.totals.recipients.map((r) => [r.address, r.current, r.opens])
+    ).toEqual([
+      ["alex@example.com", true, 1],
+      ["sam@example.net", false, 1],
+    ]);
+  });
+
   test("a shared copy is shown as recipient unknown", async () => {
     const result = await sentTo(["alex@example.com", "sam@example.net"], true);
     await h.hit(setOf(result, "").imageUrl);
