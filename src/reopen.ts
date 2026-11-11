@@ -4,8 +4,9 @@
  * the email. For a probable human that is REOPEN_GAP_MS; for an on-open image proxy such
  * as Gmail's it is PROXY_REOPEN_GAP_MS (owner, 2026-11-12). An on-open proxy fetches only
  * when the recipient opens, so Gmail recipients can re-open (owner, 2026-11-11), but a hit
- * marked "possibly preloaded by Gmail" (src/preload.ts) is never a re-open; it still
- * counts as the set's previous open for the next one. Prefetches (Apple Mail Privacy
+ * marked "possibly preloaded by Gmail" (src/preload.ts) is never a re-open and does not
+ * reset the gap, so a preload cannot hide a later real re-open (coordinator, 2026-11-12).
+ * It still counts as an open everywhere else. Prefetches (Apple Mail Privacy
  * Protection, Private Relay), scanners, own hits and repeats are not counted, so they
  * neither start nor resume a run. Worked out when the data is read; it changes no count. Kept free of Worker-only
  * imports so the dashboard app can bundle it.
@@ -28,7 +29,7 @@ export interface CountedOpen {
   group: string;
   /** Fetched by an on-open image proxy (class 'proxy'), not a probable human. */
   proxy: boolean;
-  /** Marked "possibly preloaded by Gmail" (src/preload.ts): never a re-open. */
+  /** Marked "possibly preloaded by Gmail" (src/preload.ts): never a re-open, and the gap is not measured from it. */
   preloaded: boolean;
 }
 
@@ -81,13 +82,10 @@ export const findReopens = (opens: readonly CountedOpen[]): CountedOpen[] => {
   const sorted = opens.toSorted((a, b) => a.at - b.at || a.id - b.id);
   const previous = new Map<string, number>();
   const found: CountedOpen[] = [];
-  for (const open of sorted) {
+  // A possible preload is neither a re-open nor the previous open the gap is measured from.
+  for (const open of sorted.filter((o) => !o.preloaded)) {
     const before = previous.get(open.group);
-    if (
-      before !== undefined &&
-      !open.preloaded &&
-      open.at - before >= reopenGap(open)
-    ) {
+    if (before !== undefined && open.at - before >= reopenGap(open)) {
       found.push(open);
     }
     previous.set(open.group, open.at);

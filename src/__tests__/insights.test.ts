@@ -180,17 +180,18 @@ describe("re-open detection", () => {
     expect(findReopens(countedOpensOf(events, NONE))).toEqual([]);
   });
 
-  test("a hit marked as a possible Gmail preload is never a re-open, but is the previous open", () => {
+  test("a hit marked as a possible Gmail preload is never a re-open and does not reset the gap", () => {
     const gmail = { class: "proxy", counted: 1 } as const;
     const events = [
       event(1, T0, gmail),
       event(2, T0 + 7 * HOUR, gmail),
-      // Two hours after the preload: measured from it, so no re-open either.
+      // Two hours after the preload but nine after the real open: a re-open.
       event(3, T0 + 9 * HOUR, gmail),
     ];
     expect(
       findReopens(countedOpensOf(events, new Set([2]))).map((o) => o.id)
-    ).toEqual([]);
+    ).toEqual([3]);
+    // Unmarked, the hit at 7 h re-opens and the one at 9 h is measured from it.
     expect(findReopens(countedOpensOf(events, NONE)).map((o) => o.id)).toEqual([
       2,
     ]);
