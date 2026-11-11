@@ -156,6 +156,36 @@ describe("send through Mailspring's synchronous caller", () => {
     expect(f.logs).toEqual([]);
   });
 
+  test("each link's own text reaches the Worker; bare URLs, image links and quoted links do not", async () => {
+    const body = [
+      '<p>See <a href="https://example.org/deck"> the\n deck </a> and',
+      ' <a href="https://example.org/deck">again</a>.</p>',
+      '<p><a href="https://cal.com/someone"><img alt="Book a call" src="https://example.org/b.png"></a></p>',
+      "<p>Slides: https://example.org/slides</p>",
+      '<p><a href="https://github.com/example">https://github.com/example</a></p>',
+      '<div class="gmail_quote"><a href="https://example.org/quoted">old text</a></div>',
+    ].join("");
+    await f.compose(draft({ body }));
+    expect(f.h.rows("SELECT url, text FROM links ORDER BY position")).toEqual([
+      { text: "the deck", url: "https://example.org/deck" },
+      { text: "Book a call", url: "https://cal.com/someone" },
+      { text: "", url: "https://example.org/slides" },
+      { text: "", url: "https://github.com/example" },
+    ]);
+    expect(f.logs).toEqual([]);
+  });
+
+  test("editing only a link's text registers again with the new text", async () => {
+    const url = "https://example.org/deck";
+    await f.compose(draft({ body: `<p><a href="${url}">deck</a></p>` }));
+    await f.compose(
+      draft({ body: `<p><a href="${url}">the new deck</a></p>` })
+    );
+    expect(f.h.rows("SELECT text FROM links")).toEqual([
+      { text: "the new deck" },
+    ]);
+  });
+
   test("warns once when the registration does not match the draft as sent", async () => {
     await f.compose();
     f.send(

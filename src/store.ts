@@ -5,9 +5,11 @@ import type { Db, Row, Statement } from "./env";
 import {
   count,
   eventRow,
+  humanOpenRow,
   linkRow,
   linkWithSentAt,
   messageRow,
+  recipientActivityRow,
   messageSummary,
   pixelTarget,
   recipientLinkRow,
@@ -15,11 +17,13 @@ import {
 } from "./schema";
 import type {
   EventRow,
+  HumanOpenRow,
   LinkRow,
   LinkWithSentAt,
   MessageRow,
   MessageSummary,
   PixelTarget,
+  RecipientActivityRow,
   RecipientLinkRow,
   RecipientRow,
 } from "./schema";
@@ -47,7 +51,8 @@ export interface Registration {
   draftId: string;
   subject: string;
   recipient: string;
-  links: string[];
+  /** Destinations with their own text in the email ('' when none). */
+  links: { url: string; text: string }[];
   /** Addresses that get their own token set (see tokenSetAddresses). */
   recipients: string[];
   shared: boolean;
@@ -181,16 +186,18 @@ export const registerMessage = async (
         r.shared ? 1 : 0,
         r.at
       ),
-    ...r.links.map((url) =>
+    // A link's text follows the latest registration that has some for it.
+    ...r.links.map(({ url, text }) =>
       db
         .prepare(
-          `INSERT INTO links (token, message_token, position, url)
+          `INSERT INTO links (token, message_token, position, url, text)
            SELECT ?, m.token,
-             (SELECT COALESCE(MAX(position) + 1, 0) FROM links WHERE message_token = m.token), ?
+             (SELECT COALESCE(MAX(position) + 1, 0) FROM links WHERE message_token = m.token), ?, ?
            FROM messages m WHERE m.draft_id = ?
-           ON CONFLICT (message_token, url) DO NOTHING`
+           ON CONFLICT (message_token, url) DO UPDATE
+             SET text = CASE WHEN excluded.text = '' THEN links.text ELSE excluded.text END`
         )
-        .bind(r.newToken(), url, r.draftId)
+        .bind(r.newToken(), url, text, r.draftId)
     ),
     ...recipientStatements(db, r),
   ]);
@@ -359,6 +366,8 @@ export const insertEvent = async (
 
 const OF_MESSAGE = "FROM events e WHERE e.message_token = m.token";
 const COUNTED = "counted = 1 AND duplicate = 0";
+/** The emails the list shows: sent, or with events (e.g. the sent notice was lost). */
+const LISTED = `(m.sent_at IS NOT NULL OR EXISTS (SELECT 1 ${OF_MESSAGE}))`;
 
 /**
  * Sent emails (or ones with events) with summaries. Opens and clicks count only events
@@ -386,7 +395,7 @@ export const listMessages = async (
              WHERE e.message_token = m.token AND r.current = 1
                AND e.counted = 1 AND e.duplicate = 0) AS opened_by
          FROM messages m
-         WHERE m.sent_at IS NOT NULL OR EXISTS (SELECT 1 ${OF_MESSAGE})
+         WHERE ${LISTED}
          ORDER BY COALESCE(m.sent_at, m.created_at) DESC LIMIT ?`
       )
       .bind(limit),
@@ -427,3 +436,72 @@ export const messageDetail = async (
   ]);
   return { events, links, message, recipients: sets.recipients };
 };
+
+/**
+ * Every counted, non-repeat probable-human open through a current recipient's token set
+ * or a message-level token, oldest first: the input of the re-open signal (src/reopen.ts).
+ */
+export const humanOpens = async (db: Db): Promise<HumanOpenRow[]> =>
+  await many(
+    db.prepare(
+      `SELECT e.id, e.at, e.message_token, e.recipient_token FROM events e
+       LEFT JOIN recipients r ON r.token = e.recipient_token
+       WHERE e.kind = 'open' AND e.class = 'human' AND e.counted = 1 AND e.duplicate = 0
+         AND (e.recipient_token IS NULL OR r.current = 1)
+       ORDER BY e.at, e.id`
+    ),
+    humanOpenRow
+  );
+
+/** Current, known addresses per email, in draft order. */
+export const currentAddresses = async (
+  db: Db
+): Promise<Map<string, string[]>> => {
+  const rows = await many(
+    db.prepare(
+      `SELECT message_token, address FROM recipients
+       WHERE current = 1 AND address != '' ORDER BY message_token, position`
+    ),
+    recipientRow.pick({ address: true, message_token: true })
+  );
+  const byMessage = new Map<string, string[]>();
+  for (const row of rows) {
+    byMessage.set(row.message_token, [
+      ...(byMessage.get(row.message_token) ?? []),
+      row.address,
+    ]);
+  }
+  return byMessage;
+};
+
+const OF_SET = "FROM events e WHERE e.recipient_token = r.token";
+
+/**
+ * One row per current token set of a known address (one person on one listed email),
+ * with that set's counted figures; for one address, or for everyone. Shared copies to
+ * several people (address '') and message-level tokens belong to no person.
+ */
+export const recipientActivity = async (
+  db: Db,
+  address: string | null = null
+): Promise<RecipientActivityRow[]> =>
+  await many(
+    db
+      .prepare(
+        `SELECT r.address, r.token AS recipient_token, m.token AS message_token, m.subject,
+           m.sent_at, m.created_at,
+           (SELECT MIN(at) ${OF_SET} AND kind = 'open' AND ${COUNTED}) AS first_open,
+           (SELECT MAX(at) ${OF_SET} AND kind = 'open' AND ${COUNTED}) AS last_open,
+           (SELECT MIN(at) ${OF_SET} AND kind = 'open' AND class = 'human' AND ${COUNTED})
+             AS first_human_open,
+           (SELECT MAX(at) ${OF_SET} AND kind = 'click' AND ${COUNTED}) AS last_click,
+           (SELECT COUNT(*) ${OF_SET} AND kind = 'open' AND ${COUNTED}) AS opens,
+           (SELECT COUNT(*) ${OF_SET} AND kind = 'click' AND ${COUNTED}) AS clicks
+         FROM recipients r JOIN messages m ON m.token = r.message_token
+         WHERE r.current = 1 AND r.address != '' AND (?1 IS NULL OR r.address = ?1)
+           AND ${LISTED}
+         ORDER BY COALESCE(m.sent_at, m.created_at) DESC`
+      )
+      .bind(address),
+    recipientActivityRow
+  );

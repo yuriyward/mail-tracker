@@ -25,6 +25,8 @@ import type {
   TimelineEvent,
   Totals,
 } from "../../../src/dashboard-data";
+import { LinkName, PersonLink } from "../badges";
+import { FigureRow } from "../figure-row";
 import { Hint } from "../hint";
 import { LoadFailed, StaleAlert, Updated, linkClass } from "../layout";
 import { When, subjectOf } from "../lib/format";
@@ -57,16 +59,7 @@ const TotalsRow = ({ totals }: { totals: Totals }) => {
     { label: "Clicks", value: clicks.counted },
     { label: "Not counted", value: opens.notCounted + clicks.notCounted },
   ];
-  return (
-    <dl className="border-border flex flex-wrap items-baseline gap-x-8 gap-y-2 border-y py-3">
-      {figures.map((figure) => (
-        <div className="flex items-baseline gap-2" key={figure.label}>
-          <dt className="type-meta text-muted-foreground">{figure.label}</dt>
-          <dd className="font-medium tabular-nums">{figure.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
+  return <FigureRow figures={figures} />;
 };
 
 const LinkClicks = ({ links }: { links: Totals["clicks"]["links"] }) => (
@@ -81,10 +74,8 @@ const LinkClicks = ({ links }: { links: Totals["clicks"]["links"] }) => (
     <TableBody>
       {links.map((link) => (
         <TableRow key={link.token}>
-          <TableCell className="font-mono text-sm">
-            <Hint label={link.url}>
-              <span className="block max-w-[60ch] truncate">{link.url}</span>
-            </Hint>
+          <TableCell>
+            <LinkName name={link.name} url={link.url} />
           </TableCell>
           <TableCell className="text-right">{link.clicks}</TableCell>
           <TableCell className="text-muted-foreground text-right">
@@ -106,6 +97,7 @@ const RecipientTable = ({ rows }: { rows: RecipientTotals[] }) => (
         <TableHead className="text-right">Clicks</TableHead>
         <TableHead className="text-right">First open</TableHead>
         <TableHead className="text-right">Last open</TableHead>
+        <TableHead className="text-right">Re-opened</TableHead>
         <TableHead>Forwarding</TableHead>
       </TableRow>
     </TableHeader>
@@ -113,7 +105,7 @@ const RecipientTable = ({ rows }: { rows: RecipientTotals[] }) => (
       {rows.map((r) => (
         <TableRow key={r.token}>
           <TableCell className="max-w-[40ch] truncate">
-            {recipientLabel(r.address)}
+            <PersonLink address={r.address} />
           </TableCell>
           <TableCell className="text-right">{r.opens}</TableCell>
           <TableCell className="text-right">{r.clicks}</TableCell>
@@ -122,6 +114,9 @@ const RecipientTable = ({ rows }: { rows: RecipientTotals[] }) => (
           </TableCell>
           <TableCell className="type-meta text-right">
             <When ms={r.lastOpen} none="—" />
+          </TableCell>
+          <TableCell className="type-meta text-right">
+            <When ms={r.lastReopen} none="—" />
           </TableCell>
           <TableCell>
             {r.hints > 0 ? (
@@ -201,14 +196,15 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
   {
     ...TIMELINE_COLUMNS.kind,
     cell: ({ row }) => {
-      const { kind, url } = row.original;
+      const { kind, linkName, url } = row.original;
+      if (kind === "open" || url === null) {
+        return kind === "open" ? "Open" : "Click";
+      }
       return (
-        <Truncated label={url}>
-          {kind === "open" ? "Open" : "Click"}
-          {url !== null && (
-            <span className="ml-2 font-mono text-sm">{url}</span>
-          )}
-        </Truncated>
+        <span className="flex items-center gap-2">
+          Click
+          <LinkName name={linkName ?? url} url={url} />
+        </span>
       );
     },
     header: "Event",
@@ -221,6 +217,7 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
           {CLASS_LABELS[row.original.class]}
         </Badge>
         {row.original.duplicate && <Badge variant="ghost">repeat</Badge>}
+        {row.original.reopen && <Badge variant="highlight">re-open</Badge>}
         {row.original.hint !== null && (
           <Hint label={row.original.hint}>
             <Badge variant="secondary">possibly forwarded</Badge>

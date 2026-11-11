@@ -7,16 +7,28 @@ import type {
   TableState,
 } from "@tanstack/react-table";
 
-import type { ListMessage, TimelineEvent } from "../../src/dashboard-data";
+import type {
+  ListMessage,
+  Person,
+  PersonEmail,
+  TimelineEvent,
+} from "../../src/dashboard-data";
+import { duration } from "../src/lib/dates";
 import {
   LIST_COLUMNS,
   LIST_SORTING,
+  PEOPLE_COLUMNS,
+  PEOPLE_SORTING,
+  PERSON_EMAIL_COLUMNS,
+  PERSON_EMAIL_SORTING,
   TIMELINE_COLUMNS,
   TIMELINE_SORTING,
   byLatestOpen,
   latestActivityOf,
   openStatesOf,
   openedByOf,
+  personEmailActivityOf,
+  personStatesOf,
   rowModels,
 } from "../src/lib/tables";
 import type { ColumnLogic } from "../src/lib/tables";
@@ -57,14 +69,17 @@ const tableOf = <T>(
 };
 
 const message = (token: string, m: Partial<ListMessage>): ListMessage => ({
+  addresses: [`${token}@example.test`],
   clicks: 0,
   firstOpen: null,
   lastOpen: null,
+  lastReopen: null,
   openedBy: 0,
   opens: 0,
   recipient: `${token}@example.test`,
   recipientUnknown: false,
   recipients: 1,
+  reopens: 0,
   sentAt: null,
   shared: false,
   subject: `Subject ${token}`,
@@ -258,9 +273,11 @@ const event = (id: number, e: Partial<TimelineEvent>): TimelineEvent => ({
   hint: null,
   id,
   kind: "open",
+  linkName: null,
   network: "",
   reason: "synthetic",
   recipient: null,
+  reopen: false,
   url: null,
   userAgent: "",
   ...e,
@@ -352,5 +369,152 @@ describe("recipients", () => {
       "p",
       "r",
     ]);
+  });
+});
+
+describe("re-opened emails", () => {
+  const REOPENED = [
+    ...MESSAGES,
+    message("e", { lastReopen: 8000, opens: 3, reopens: 1, sentAt: 500 }),
+    message("f", { lastReopen: 6000, opens: 2, reopens: 2, sentAt: 400 }),
+  ];
+  const tokens = (view: View): string[] =>
+    tableOf(REOPENED, LIST_COLUMNS, view)
+      .getRowModel()
+      .rows.map((row) => row.original.token);
+
+  test("the status filter picks re-opened emails", () => {
+    expect(
+      tokens({ filters: [{ id: "status", value: ["reopened"] }] })
+    ).toEqual(["e", "f"]);
+    expect(openStatesOf(REOPENED[4] ?? message("x", {}))).toEqual([
+      "opened",
+      "reopened",
+    ]);
+  });
+
+  test("sorts by last re-open, newest first, never re-opened last", () => {
+    const table = tableOf(REOPENED, LIST_COLUMNS, {});
+    expect(table.getColumn("lastReopen")?.getFirstSortDir()).toBe("desc");
+    expect(
+      tokens({ sorting: [{ desc: true, id: "lastReopen" }] }).slice(0, 2)
+    ).toEqual(["e", "f"]);
+  });
+});
+
+const person = (address: string, p: Partial<Person>): Person => ({
+  address,
+  emails: 1,
+  lastActivity: null,
+  lastClick: null,
+  lastOpen: null,
+  lastReopen: null,
+  lastSent: null,
+  medianFirstOpen: null,
+  opened: 0,
+  reopens: 0,
+  ...p,
+});
+
+const PEOPLE = [
+  person("ann@example.test", {
+    lastActivity: 5000,
+    lastOpen: 5000,
+    medianFirstOpen: 3 * 60_000,
+    opened: 2,
+  }),
+  person("ben@example.test", { lastActivity: 9000, lastSent: 9000 }),
+  person("cy@example.test", {
+    lastActivity: 7000,
+    lastClick: 7000,
+    lastReopen: 6500,
+    medianFirstOpen: 60_000,
+    opened: 1,
+    reopens: 1,
+  }),
+  person("dee@example.test", {}),
+];
+
+const peopleBy = (view: View): string[] =>
+  tableOf(PEOPLE, PEOPLE_COLUMNS, view)
+    .getRowModel()
+    .rows.map((row) => row.original.address.split("@")[0] ?? "");
+
+describe("people list", () => {
+  test("defaults to latest activity, newest first, none last", () => {
+    expect(peopleBy({ sorting: PEOPLE_SORTING })).toEqual([
+      "ben",
+      "cy",
+      "ann",
+      "dee",
+    ]);
+  });
+
+  test("the median first open sorts shortest first, none last", () => {
+    expect(
+      peopleBy({ sorting: [{ desc: false, id: "medianFirstOpen" }] })
+    ).toEqual(["cy", "ann", "ben", "dee"]);
+  });
+
+  test("searches the address and filters by status", () => {
+    expect(peopleBy({ search: "CY@" })).toEqual(["cy"]);
+    const by = (value: string[]) =>
+      peopleBy({ filters: [{ id: "status", value }] });
+    expect(by(["opened"])).toEqual(["ann", "cy"]);
+    expect(by(["not-opened"])).toEqual(["ben", "dee"]);
+    expect(by(["clicked"])).toEqual(["cy"]);
+    expect(by(["reopened"])).toEqual(["cy"]);
+  });
+
+  test("statuses of a person", () => {
+    expect(personStatesOf(PEOPLE[2] ?? person("x", {}))).toEqual([
+      "opened",
+      "clicked",
+      "reopened",
+    ]);
+  });
+});
+
+const personEmail = (token: string, e: Partial<PersonEmail>): PersonEmail => ({
+  clicks: 0,
+  firstOpen: null,
+  lastClick: null,
+  lastOpen: null,
+  lastReopen: null,
+  opens: 0,
+  reopens: 0,
+  sentAt: null,
+  subject: `Subject ${token}`,
+  token,
+  ...e,
+});
+
+describe("a person's emails", () => {
+  test("default to latest activity, a click included, newest first", () => {
+    const emails = [
+      personEmail("a", { lastOpen: 4000, sentAt: 1000 }),
+      personEmail("b", { lastClick: 6000, sentAt: 2000 }),
+      personEmail("c", { sentAt: 5000 }),
+      personEmail("d", {}),
+    ];
+    expect(personEmailActivityOf(emails[1] ?? personEmail("x", {}))).toBe(6000);
+    expect(
+      tableOf(emails, PERSON_EMAIL_COLUMNS, { sorting: PERSON_EMAIL_SORTING })
+        .getRowModel()
+        .rows.map((row) => row.original.token)
+    ).toEqual(["b", "c", "a", "d"]);
+  });
+});
+
+describe("durations", () => {
+  test.each([
+    [20_000, "under a minute"],
+    [12 * 60_000, "12 min"],
+    [3_600_000, "1 h"],
+    [3 * 3_600_000 + 5 * 60_000, "3 h 5 min"],
+    [2 * 86_400_000, "2 d"],
+    [2 * 86_400_000 + 4 * 3_600_000 + 59 * 60_000, "2 d 4 h"],
+  ])("%d ms reads %s", (ms, text) => {
+    expect(duration(ms)).toBe(text);
   });
 });

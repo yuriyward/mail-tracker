@@ -4,13 +4,23 @@ import { trimTrailingSlash } from "hono/trailing-slash";
 
 import { accessAuth } from "./auth";
 import type { JwksSource } from "./auth";
-import { listMessage, messageTotals, timelineEvent } from "./dashboard-data";
-import type { DetailData, ListData } from "./dashboard-data";
+import {
+  messageTotals,
+  timelineContext,
+  timelineEvent,
+} from "./dashboard-data";
+import type {
+  DetailData,
+  ListData,
+  PeopleData,
+  PersonData,
+} from "./dashboard-data";
 import type { AppEnv, Db } from "./env";
 import { forwardingHints } from "./forwarding";
-import { listMessages, messageDetail } from "./store";
+import { messageDetail } from "./store";
 import type { MessageDetail } from "./store";
 import { isToken } from "./tokens";
+import { listView, peopleView, personView } from "./views";
 
 export { REFRESH_MS } from "./dashboard-data";
 
@@ -41,22 +51,32 @@ const HEADERS = { ...SECURITY, "Cache-Control": "no-store" };
 /** Vite names files under /app/assets/ by content hash, so they never change. */
 const IMMUTABLE = "private, max-age=31536000, immutable";
 
-/** The app's shell; it routes /app and /app/messages/:token in the browser. */
+/** The app's shell; it routes /app, /app/messages/:token and /app/people… in the browser. */
 const INDEX = "/app/index.html";
 
 const listData = async (db: Db, now: number): Promise<ListData> => {
-  const messages = await listMessages(db, LIST_LIMIT);
-  return { messages: messages.map((m) => listMessage(m)), updated: now };
+  const { messages } = await listView(db, LIST_LIMIT);
+  return { messages, updated: now };
+};
+
+const peopleData = async (db: Db, now: number): Promise<PeopleData> => ({
+  people: await peopleView(db),
+  updated: now,
+});
+
+const personData = async (
+  db: Db,
+  address: string,
+  now: number
+): Promise<PersonData | null> => {
+  const view = await personView(db, address);
+  return view ? { ...view, updated: now } : null;
 };
 
 const detailData = (detail: MessageDetail, now: number): DetailData => {
   const { message, links, recipients, events } = detail;
   const hints = forwardingHints(recipients, events);
-  const context = {
-    addresses: new Map(recipients.map((r) => [r.token, r.address])),
-    hints,
-    urls: new Map(links.map((link) => [link.token, link.url])),
-  };
+  const context = timelineContext(links, recipients, events, hints);
   return {
     message: {
       recipient: message.recipient,
@@ -113,6 +133,12 @@ export const dashboardRoutes = (now: () => number, jwks: JwksSource) => {
     await serveAsset(c, INDEX, "no-store");
   app.get("/", shell);
   app.get("/messages/:token", shell);
+  app.get("/people", shell);
+  // Data routes first: an address always has an "@", so it never reads as "data".
+  app.get("/people/data", async (c) =>
+    c.json(await peopleData(c.env.DB, now()), 200, HEADERS)
+  );
+  app.get("/people/:address", shell);
 
   app.get(
     "/assets/:file",
@@ -132,6 +158,13 @@ export const dashboardRoutes = (now: () => number, jwks: JwksSource) => {
     const detail = await findDetail(c.env.DB, c.req.param("token"));
     return detail
       ? c.json(detailData(detail, now()), 200, HEADERS)
+      : c.json({ error: "not found" }, 404, HEADERS);
+  });
+
+  app.get("/people/:address/data", async (c) => {
+    const data = await personData(c.env.DB, c.req.param("address"), now());
+    return data
+      ? c.json(data, 200, HEADERS)
       : c.json({ error: "not found" }, 404, HEADERS);
   });
 

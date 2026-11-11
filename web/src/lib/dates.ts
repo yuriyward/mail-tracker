@@ -143,3 +143,22 @@ export const dateTooltip = (
   now: number,
   zone: DateZone = {}
 ): string => `${fullDate(ms, zone)} · ${relativeTime(ms, now, zone)}`;
+
+/** A span of time, coarse: "under a minute", "12 min", "3 h 5 min", "2 d 4 h". */
+export const duration = (ms: number): string => {
+  const minutes = Math.floor(ms / MINUTE_MS);
+  if (minutes < 1) {
+    return "under a minute";
+  }
+  if (ms < HOUR_MS) {
+    return `${minutes} min`;
+  }
+  const hours = Math.floor(ms / HOUR_MS);
+  if (ms < DAY_MS) {
+    const rest = minutes - hours * 60;
+    return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+  }
+  const days = Math.floor(ms / DAY_MS);
+  const rest = hours - days * 24;
+  return rest === 0 ? `${days} d` : `${days} d ${rest} h`;
+};

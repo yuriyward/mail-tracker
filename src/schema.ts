@@ -17,6 +17,8 @@ export type MessageRow = z.infer<typeof messageRow>;
 export const linkRow = z.object({
   message_token: z.string(),
   position: z.number(),
+  /** The link's own text in the email ('' when none was sent); see src/link-names.ts. */
+  text: z.string(),
   token: z.string(),
   url: z.string(),
 });
@@ -94,6 +96,8 @@ export const count = z.object({ n: z.number() });
 export const mintRequest = z.object({
   /** The draft's headerMessageId; registering the same draft again reuses its tokens. */
   draftId: z.string().min(1).max(998),
+  /** Each link's own text in the email, by URL as in `links`; optional per link. */
+  linkText: z.record(z.string().max(4096), z.string().max(2000)).default({}),
   links: z.array(z.string()).max(500).default([]),
   /** Display text of every recipient, as the plugin shows it. */
   recipient: z.string().max(2000).default(""),
@@ -107,3 +111,29 @@ export type MintRequest = z.infer<typeof mintRequest>;
 
 /** The body of POST /api/messages/:token/sent: when Mailspring reported delivery. */
 export const sentRequest = z.object({ sentAt: z.number().int().optional() });
+
+/** One token set of a known address on a listed email, with its figures (the people view). */
+export const recipientActivityRow = z.object({
+  address: z.string(),
+  clicks: z.number(),
+  created_at: z.number(),
+  first_human_open: z.number().nullable(),
+  first_open: z.number().nullable(),
+  last_click: z.number().nullable(),
+  last_open: z.number().nullable(),
+  message_token: z.string(),
+  opens: z.number(),
+  recipient_token: z.string(),
+  sent_at: z.number().nullable(),
+  subject: z.string(),
+});
+export type RecipientActivityRow = z.infer<typeof recipientActivityRow>;
+
+/** A counted, non-repeat probable-human open (the re-open signal, src/reopen.ts). */
+export const humanOpenRow = z.object({
+  at: z.number(),
+  id: z.number(),
+  message_token: z.string(),
+  recipient_token: z.string().nullable(),
+});
+export type HumanOpenRow = z.infer<typeof humanOpenRow>;

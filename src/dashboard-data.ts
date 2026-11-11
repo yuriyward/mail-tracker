@@ -6,14 +6,38 @@
 import { z } from "zod";
 
 import { EVENT_CLASSES } from "./classify";
-import type { EventRow, LinkRow, MessageSummary, RecipientRow } from "./schema";
+import { linkName } from "./link-names";
+import {
+  NO_REOPENS,
+  findReopens,
+  humanOpensOf,
+  openGroup,
+  reopensByGroup,
+  summarise,
+} from "./reopen";
+import type { Reopens } from "./reopen";
+import type {
+  EventRow,
+  HumanOpenRow,
+  LinkRow,
+  MessageSummary,
+  RecipientRow,
+} from "./schema";
 
 /** How often an open, visible dashboard tab asks for fresh data. */
 export const REFRESH_MS = 15_000;
 
 const at = z.number().nullable();
 
+/** The re-open signal (src/reopen.ts): how many, and the latest. */
+const reopenFields = {
+  lastReopen: at,
+  reopens: z.number(),
+};
+
 export const listMessageSchema = z.object({
+  /** Current recipients with a known address, in draft order: each links to their page. */
+  addresses: z.array(z.string()),
   /** Counted clicks, on any link. */
   clicks: z.number(),
   firstOpen: at,
@@ -32,6 +56,7 @@ export const listMessageSchema = z.object({
   shared: z.boolean(),
   subject: z.string(),
   token: z.string(),
+  ...reopenFields,
 });
 export type ListMessage = z.infer<typeof listMessageSchema>;
 
@@ -55,6 +80,8 @@ export type OpenTotals = z.infer<typeof openTotals>;
 
 const linkTotalsSchema = z.object({
   clicks: z.number(),
+  /** The link's text in the email, else its domain (src/link-names.ts). */
+  name: z.string(),
   notCounted: z.number(),
   token: z.string(),
   url: z.string(),
@@ -73,6 +100,7 @@ const recipientTotalsSchema = z.object({
   lastOpen: at,
   opens: z.number(),
   token: z.string(),
+  ...reopenFields,
 });
 export type RecipientTotals = z.infer<typeof recipientTotalsSchema>;
 
@@ -86,6 +114,7 @@ const totalsSchema = z.object({
   lastOpen: at,
   opens: openTotals,
   recipients: z.array(recipientTotalsSchema),
+  ...reopenFields,
 });
 export type Totals = z.infer<typeof totalsSchema>;
 
@@ -99,10 +128,14 @@ const timelineEventSchema = z.object({
   hint: z.string().nullable(),
   id: z.number(),
   kind: z.enum(["open", "click"]),
+  /** The clicked link's name (its text, else its domain); null for opens. */
+  linkName: z.string().nullable(),
   network: z.string(),
   reason: z.string(),
   /** The token set's address ('' when shared); null for message-level tokens. */
   recipient: z.string().nullable(),
+  /** A probable-human open after a gap of an hour or more (src/reopen.ts). */
+  reopen: z.boolean(),
   /** The clicked link's destination; null for opens. */
   url: z.string().nullable(),
   userAgent: z.string(),
@@ -123,6 +156,55 @@ export const detailDataSchema = z.object({
 });
 export type DetailData = z.infer<typeof detailDataSchema>;
 
+/** One recipient address across every listed email (src/people.ts). */
+export const personSchema = z.object({
+  address: z.string(),
+  /** Listed emails with this address as a current recipient. */
+  emails: z.number(),
+  /** The newest of last sent, last open and last click. */
+  lastActivity: at,
+  lastClick: at,
+  lastOpen: at,
+  lastSent: at,
+  /** Median delay from sending to the first probable-human open (ms), over opened emails. */
+  medianFirstOpen: at,
+  /** Of `emails`, those with a counted open or click by this person. */
+  opened: z.number(),
+  ...reopenFields,
+});
+export type Person = z.infer<typeof personSchema>;
+
+/** One email as one person saw it: their own token set's figures. */
+export const personEmailSchema = z.object({
+  clicks: z.number(),
+  firstOpen: at,
+  lastClick: at,
+  lastOpen: at,
+  opens: z.number(),
+  sentAt: at,
+  subject: z.string(),
+  token: z.string(),
+  ...reopenFields,
+});
+export type PersonEmail = z.infer<typeof personEmailSchema>;
+
+export const peopleDataSchema = z.object({
+  people: z.array(personSchema),
+  updated: z.number(),
+});
+export type PeopleData = z.infer<typeof peopleDataSchema>;
+
+export const personDataSchema = z.object({
+  emails: z.array(personEmailSchema),
+  person: personSchema,
+  updated: z.number(),
+});
+export type PersonData = z.infer<typeof personDataSchema>;
+
+/** The app's path of a person's page. */
+export const personPath = (address: string): string =>
+  `/app/people/${encodeURIComponent(address)}`;
+
 /** The rule every summary uses: a counted class and not a repeat by the same actor. */
 const counts = (e: EventRow): boolean => e.counted === 1 && e.duplicate === 0;
 
@@ -138,6 +220,7 @@ const linkTotals = (link: LinkRow, events: EventRow[]): LinkTotals => {
   const counted = clicks.filter(counts).length;
   return {
     clicks: counted,
+    name: linkName(link.url, link.text),
     notCounted: clicks.length - counted,
     token: link.token,
     url: link.url,
@@ -156,8 +239,9 @@ export const recipientTotals = (
   recipients: RecipientRow[],
   events: EventRow[],
   hints: ReadonlyMap<number, string>
-): RecipientTotals[] =>
-  recipients.flatMap((r) => {
+): RecipientTotals[] => {
+  const reopens = reopensByGroup(findReopens(humanOpensOf(events)));
+  return recipients.flatMap((r) => {
     const own = events.filter((e) => e.recipient_token === r.token);
     if (r.current === 0 && own.length === 0) {
       return [];
@@ -172,9 +256,25 @@ export const recipientTotals = (
         opens: opens.length,
         token: r.token,
         ...range(opens.map((e) => e.at)),
+        ...(reopens.get(r.token) ?? NO_REOPENS),
       },
     ];
   });
+};
+
+/**
+ * The email's re-opens: through current recipients' token sets and message-level tokens,
+ * as the email list counts them.
+ */
+const emailReopens = (
+  recipients: RecipientRow[],
+  reopenEvents: ReturnType<typeof findReopens>
+): Reopens => {
+  const removed = new Set(
+    recipients.filter((r) => r.current === 0).map((r) => r.token)
+  );
+  return summarise(reopenEvents.filter((o) => !removed.has(o.group)));
+};
 
 export interface TotalsInput {
   links: LinkRow[];
@@ -194,6 +294,7 @@ export const messageTotals = ({
   const countedOpens = opens.filter(counts);
   const clicks = events.filter((e) => e.kind === "click");
   const countedClicks = clicks.filter(counts).length;
+  const reopenEvents = findReopens(humanOpensOf(events));
   return {
     clicks: {
       counted: countedClicks,
@@ -208,10 +309,15 @@ export const messageTotals = ({
     },
     recipients: recipientTotals(recipients, events, hints),
     ...range(countedOpens.map((e) => e.at)),
+    ...emailReopens(recipients, reopenEvents),
   };
 };
 
-export const listMessage = (m: MessageSummary): ListMessage => ({
+export const listMessage = (
+  m: MessageSummary,
+  extra: { addresses: string[]; reopens: Reopens }
+): ListMessage => ({
+  addresses: extra.addresses,
   clicks: m.clicks,
   firstOpen: m.first_open,
   lastOpen: m.last_open,
@@ -224,34 +330,84 @@ export const listMessage = (m: MessageSummary): ListMessage => ({
   shared: m.shared === 1,
   subject: m.subject,
   token: m.token,
+  ...extra.reopens,
 });
 
 export interface TimelineContext {
-  /** Link token to destination. */
-  urls: ReadonlyMap<string, string>;
+  /** Link token to its row. */
+  links: ReadonlyMap<string, LinkRow>;
   /** Recipient token to address. */
   addresses: ReadonlyMap<string, string>;
   hints: ReadonlyMap<number, string>;
+  /** Ids of the events that are re-opens. */
+  reopens: ReadonlySet<number>;
 }
+
+/** What the timeline needs to name each event's link and recipient. */
+export const timelineContext = (
+  links: readonly LinkRow[],
+  recipients: readonly RecipientRow[],
+  events: readonly EventRow[],
+  hints: ReadonlyMap<number, string>
+): TimelineContext => ({
+  addresses: new Map(recipients.map((r) => [r.token, r.address])),
+  hints,
+  links: new Map(links.map((link) => [link.token, link])),
+  reopens: new Set(findReopens(humanOpensOf(events)).map((o) => o.id)),
+});
 
 export const timelineEvent = (
   e: EventRow,
-  { urls, addresses, hints }: TimelineContext
-): TimelineEvent => ({
-  at: e.at,
-  class: e.class,
-  counted: e.counted === 1,
-  country: e.country,
-  duplicate: e.duplicate === 1,
-  hint: hints.get(e.id) ?? null,
-  id: e.id,
-  kind: e.kind,
-  network: e.as_organization,
-  reason: e.reason,
-  recipient:
-    e.recipient_token === null
-      ? null
-      : (addresses.get(e.recipient_token) ?? null),
-  url: e.link_token === null ? null : (urls.get(e.link_token) ?? null),
-  userAgent: e.user_agent,
-});
+  { links, addresses, hints, reopens }: TimelineContext
+): TimelineEvent => {
+  const link = e.link_token === null ? undefined : links.get(e.link_token);
+  return {
+    at: e.at,
+    class: e.class,
+    counted: e.counted === 1,
+    country: e.country,
+    duplicate: e.duplicate === 1,
+    hint: hints.get(e.id) ?? null,
+    id: e.id,
+    kind: e.kind,
+    linkName: link ? linkName(link.url, link.text) : null,
+    network: e.as_organization,
+    reason: e.reason,
+    recipient:
+      e.recipient_token === null
+        ? null
+        : (addresses.get(e.recipient_token) ?? null),
+    reopen: reopens.has(e.id),
+    url: link?.url ?? null,
+    userAgent: e.user_agent,
+  };
+};
+
+/** Re-opens by email and by token set. */
+export interface ReopenIndex {
+  byEmail: Map<string, Reopens>;
+  /** By recipient token; message-level tokens are under `message:<token>`. */
+  bySet: Map<string, Reopens>;
+}
+
+/** Re-opens per email, from the human opens of every listed email (store.humanOpens). */
+export const reopensByEmail = (opens: readonly HumanOpenRow[]): ReopenIndex => {
+  const emailOf = new Map<string, string>();
+  const human = opens.map((o) => {
+    const group = openGroup(o.recipient_token, o.message_token);
+    emailOf.set(group, o.message_token);
+    return { at: o.at, group, id: o.id };
+  });
+  const reopenEvents = findReopens(human);
+  const byEmail = new Map<string, ReturnType<typeof findReopens>>();
+  for (const o of reopenEvents) {
+    const email = emailOf.get(o.group) ?? "";
+    byEmail.set(email, [...(byEmail.get(email) ?? []), o]);
+  }
+  return {
+    byEmail: new Map(
+      [...byEmail].map(([email, own]) => [email, summarise(own)] as const)
+    ),
+    bySet: reopensByGroup(reopenEvents),
+  };
+};

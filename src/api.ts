@@ -5,21 +5,33 @@ import { recipientTotals } from "./dashboard-data";
 import { checkDestination } from "./destinations";
 import type { AppEnv } from "./env";
 import { forwardingHints } from "./forwarding";
+import { cleanLinkText, linkName } from "./link-names";
 import { tokenSetAddresses } from "./recipients";
 import { mintRequest, sentRequest } from "./schema";
 import type { MintRequest } from "./schema";
-import {
-  listMessages,
-  markSent,
-  messageDetail,
-  registerMessage,
-} from "./store";
+import { markSent, messageDetail, registerMessage } from "./store";
 import type { RecipientSet } from "./store";
 import { isToken, newToken } from "./tokens";
+import { listView, peopleView, personView } from "./views";
 
 const LIST_LIMIT = 500;
 
-type Checked = { ok: true; links: string[] } | { ok: false; error: string };
+type Checked =
+  | { ok: true; links: string[]; text: Map<string, string> }
+  | { ok: false; error: string };
+
+/** Link text by normalised URL; keys that are not a valid destination are ignored. */
+const linkTexts = (raw: Record<string, string>): Map<string, string> => {
+  const texts = new Map<string, string>();
+  for (const [url, text] of Object.entries(raw)) {
+    const check = checkDestination(url);
+    const clean = cleanLinkText(text);
+    if (check.ok && clean !== "" && !texts.has(check.url)) {
+      texts.set(check.url, clean);
+    }
+  }
+  return texts;
+};
 
 /** Every submitted link must pass the redirect allow-list; one bad link rejects the request. */
 const checkLinks = (request: MintRequest, ownHost: string): Checked => {
@@ -37,7 +49,7 @@ const checkLinks = (request: MintRequest, ownHost: string): Checked => {
     }
     links.push(check.url);
   }
-  return { links, ok: true };
+  return { links, ok: true, text: linkTexts(request.linkText) };
 };
 
 interface MintedLink {
@@ -104,7 +116,10 @@ export const apiRoutes = (now: () => number) => {
     const registered = await registerMessage(c.env.DB, {
       at: now(),
       draftId: body.data.draftId,
-      links: submitted,
+      links: submitted.map((url) => ({
+        text: checked.text.get(url) ?? "",
+        url,
+      })),
       newToken,
       recipient: body.data.recipient,
       recipients: tokenSetAddresses(body.data.recipients, body.data.shared),
@@ -153,9 +168,32 @@ export const apiRoutes = (now: () => number) => {
     return found ? c.body(null, 204) : c.json({ error: "not found" }, 404);
   });
 
-  app.get("/messages", readAuth, async (c) =>
-    c.json({ messages: await listMessages(c.env.DB, LIST_LIMIT) })
+  /**
+   * The rows, plus `addresses` (current recipients), `reopens` and `last_reopen` (the
+   * re-open signal, src/reopen.ts) per email.
+   */
+  app.get("/messages", readAuth, async (c) => {
+    const view = await listView(c.env.DB, LIST_LIMIT);
+    return c.json({
+      messages: view.summaries.map((m, index) => ({
+        ...m,
+        addresses: view.messages[index]?.addresses ?? [],
+        last_reopen: view.messages[index]?.lastReopen ?? null,
+        reopens: view.messages[index]?.reopens ?? 0,
+      })),
+    });
+  });
+
+  /** One row per recipient address across all emails (src/people.ts). */
+  app.get("/people", readAuth, async (c) =>
+    c.json({ people: await peopleView(c.env.DB) })
   );
+
+  /** One person's figures and their emails; 404 for an address on no listed email. */
+  app.get("/people/:address", readAuth, async (c) => {
+    const view = await personView(c.env.DB, c.req.param("address"));
+    return view ? c.json(view) : c.json({ error: "not found" }, 404);
+  });
 
   /**
    * The raw rows, plus per-recipient figures and, on each event, `hint`: the forwarding
@@ -173,7 +211,11 @@ export const apiRoutes = (now: () => number) => {
         ...e,
         hint: hints.get(e.id) ?? null,
       })),
-      links: detail.links,
+      // `name`: the link's text in the email, else its domain.
+      links: detail.links.map((link) => ({
+        ...link,
+        name: linkName(link.url, link.text),
+      })),
       message: detail.message,
       recipients: recipientTotals(detail.recipients, detail.events, hints),
     });

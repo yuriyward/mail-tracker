@@ -1,29 +1,20 @@
-import { useReactTable } from "@tanstack/react-table";
-import type { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";
-import { useState } from "react";
-
-import {
-  DataTableFacetedFilter,
-  DataTableSearch,
-} from "@/components/patterns/data-table-filters";
-import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Skeleton } from "@/components/ui/skeleton";
+import type { ColumnDef } from "@tanstack/react-table";
 
 import { listDataSchema } from "../../../src/dashboard-data";
 import type { ListMessage } from "../../../src/dashboard-data";
+import { RecipientLinks } from "../badges";
 import { Hint } from "../hint";
-import { LoadFailed, StaleAlert, Updated, linkClass } from "../layout";
+import { linkClass } from "../layout";
 import { When, subjectOf } from "../lib/format";
-import { usePoll } from "../lib/poll";
 import {
   LIST_COLUMNS,
   LIST_SORTING,
-  OPEN_STATES,
   latestActivityOf,
   openedByOf,
-  rowModels,
 } from "../lib/tables";
-import { FilteredTable, sortHeader } from "../table-parts";
+import { ListTable } from "../list-table";
+import { Nothing, Polled } from "../polled";
+import { sortHeader } from "../table-parts";
 
 const END = { align: "end", cellClassName: "type-meta" } as const;
 
@@ -49,11 +40,10 @@ const COLUMNS: ColumnDef<ListMessage>[] = [
   {
     ...LIST_COLUMNS.recipient,
     cell: ({ row }) => (
-      <Hint label={row.original.recipient}>
-        <span className="block max-w-[28ch] truncate">
-          {row.original.recipient}
-        </span>
-      </Hint>
+      <RecipientLinks
+        addresses={row.original.addresses}
+        fallback={row.original.recipient}
+      />
     ),
     header: sortHeader<ListMessage>("Recipient"),
   },
@@ -82,6 +72,12 @@ const COLUMNS: ColumnDef<ListMessage>[] = [
     meta: END,
   },
   {
+    ...LIST_COLUMNS.lastReopen,
+    cell: ({ row }) => <When ms={row.original.lastReopen} none="—" />,
+    header: sortHeader<ListMessage>("Re-opened"),
+    meta: END,
+  },
+  {
     ...LIST_COLUMNS.opens,
     header: sortHeader<ListMessage>("Opens"),
     meta: END,
@@ -100,94 +96,36 @@ const COLUMNS: ColumnDef<ListMessage>[] = [
   LIST_COLUMNS.status,
 ];
 
-const MODELS = rowModels<ListMessage>();
-
-const Messages = ({ messages }: { messages: ListMessage[] }) => {
-  const [sorting, setSorting] = useState(LIST_SORTING);
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [globalFilter, setGlobalFilter] = useState("");
-  const table = useReactTable({
-    ...MODELS,
-    columns: COLUMNS,
-    data: messages,
-    getRowId: (m) => m.token,
-    globalFilterFn: "includesString",
-    initialState: { columnVisibility: { status: false } },
-    onColumnFiltersChange: setColumnFilters,
-    onGlobalFilterChange: setGlobalFilter,
-    onSortingChange: setSorting,
-    state: { columnFilters, globalFilter, sorting },
-  });
-  const status = table.getColumn("status");
-  if (messages.length === 0) {
-    return (
-      <Empty className="border p-8">
-        <EmptyHeader>
-          <EmptyTitle>No sent emails yet</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
-  return (
-    <FilteredTable
+const Messages = ({ messages }: { messages: ListMessage[] }) =>
+  messages.length === 0 ? (
+    <Nothing title="No sent emails yet" />
+  ) : (
+    <ListTable
       caption="Emails"
+      columns={COLUMNS}
+      data={messages}
+      hidden={{ status: false }}
       noMatch="No emails match"
       noun={["email", "emails"]}
-      table={table}
-      toolbar={
-        <>
-          <DataTableSearch
-            label="Search emails by subject or recipient"
-            onChange={setGlobalFilter}
-            placeholder="Search subject or recipient"
-            value={globalFilter}
-          />
-          {status && (
-            <DataTableFacetedFilter
-              column={status}
-              options={OPEN_STATES}
-              title="Status"
-            />
-          )}
-        </>
-      }
+      rowId={(m) => m.token}
+      search={{
+        label: "Search emails by subject or recipient",
+        placeholder: "Search subject or recipient",
+      }}
+      sorting={LIST_SORTING}
     />
   );
-};
-
-const Loading = () => (
-  <div
-    aria-label="Loading emails"
-    className="flex flex-col gap-2"
-    role="status"
-  >
-    <Skeleton className="h-12 w-full" />
-    <Skeleton className="h-12 w-full" />
-    <Skeleton className="h-12 w-full" />
-  </div>
-);
-
-const Body = () => {
-  const poll = usePoll("/app/data", listDataSchema);
-  if (poll.kind === "loading") {
-    return <Loading />;
-  }
-  if (poll.kind !== "ready") {
-    return <LoadFailed />;
-  }
-  const { data, stale } = poll;
-  return (
-    <>
-      <Updated ms={data.updated} />
-      {stale && <StaleAlert ms={data.updated} />}
-      <Messages messages={data.messages} />
-    </>
-  );
-};
 
 export const EmailList = () => (
   <section className="flex flex-col gap-6">
     <h1 className="type-section">Emails</h1>
-    <Body />
+    <Polled
+      loading="Loading emails"
+      missing="No sent emails yet"
+      schema={listDataSchema}
+      url="/app/data"
+    >
+      {(data) => <Messages messages={data.messages} />}
+    </Polled>
   </section>
 );

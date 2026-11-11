@@ -1,6 +1,7 @@
 import type { DetailData, Totals } from "../../src/dashboard-data";
 import { Badge } from "./components/ui/badge";
 import { When } from "./lib/format";
+import { Reopened } from "./reopened";
 
 /** "to · sent 12:54 AM · opened 12:54 AM–1:35 AM" on one line, full dates on hover. */
 export const Summary = ({
@@ -8,9 +9,10 @@ export const Summary = ({
   totals,
 }: {
   message: Pick<DetailData["message"], "recipient" | "sentAt" | "shared">;
-  totals: Pick<Totals, "firstOpen" | "lastOpen">;
+  totals: Pick<Totals, "firstOpen" | "lastOpen"> &
+    Partial<Pick<Totals, "lastReopen">>;
 }) => {
-  const { firstOpen, lastOpen } = totals;
+  const { firstOpen, lastOpen, lastReopen = null } = totals;
   return (
     <p className="type-meta text-muted-foreground flex flex-wrap items-center gap-x-2">
       <span className="text-foreground break-all">{message.recipient}</span>
@@ -35,6 +37,12 @@ export const Summary = ({
             </>
           )}
         </span>
+      )}
+      {lastReopen !== null && (
+        <>
+          <span aria-hidden>·</span>
+          <Reopened ms={lastReopen} />
+        </>
       )}
     </p>
   );

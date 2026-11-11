@@ -15,14 +15,17 @@ const NOW = Date.now();
 const DATA: ListData = {
   messages: [
     {
+      addresses: ["ann@example.com"],
       clicks: 0,
       firstOpen: NOW - 3 * 3_600_000,
       lastOpen: NOW - 2 * 3_600_000,
+      lastReopen: null,
       openedBy: 1,
       opens: 1,
       recipient: "ann@example.com",
       recipientUnknown: false,
       recipients: 1,
+      reopens: 0,
       sentAt: NOW - 4 * 3_600_000,
       shared: false,
       subject: "Quarterly plan",
@@ -135,5 +138,12 @@ describe("the built bundle under the strict CSP", () => {
     expect(inserted).toEqual([]);
     expect(directStyles).toEqual([]);
     expect(document.querySelector("[title]")).toBeNull();
+  });
+
+  test("the recipient cell links to the person's page", () => {
+    const link = document.querySelector(
+      'a[href="/app/people/ann%40example.com"]'
+    );
+    expect(link?.textContent).toBe("ann@example.com");
   });
 });

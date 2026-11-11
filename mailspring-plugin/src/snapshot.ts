@@ -1,8 +1,9 @@
 import type { Contact, Message } from "mailspring-exports";
 import { z } from "zod";
 
+import type { LinkTexts } from "../../src/link-names";
 import { tokenSetAddresses } from "../../src/recipients";
-import { trackableUrls } from "./rewrite";
+import { linkTexts, trackableUrls } from "./rewrite";
 
 /**
  * What a registration covers, sent as the body of POST /api/messages and compared at send
@@ -18,6 +19,8 @@ export interface Snapshot {
   /** The account sends one body to all (Microsoft Graph): one shared token set. */
   shared: boolean;
   links: string[];
+  /** Each link's own text in the email, by URL; links without text are left out. */
+  linkText: LinkTexts;
 }
 
 /** To, Cc and Bcc, as Mailspring's participants({ includeFrom: false, includeBcc: true }). */
@@ -46,6 +49,7 @@ export const snapshot = (
   shared: boolean
 ): Snapshot => ({
   draftId: draft.headerMessageId,
+  linkText: linkTexts(root, origin),
   links: trackableUrls(root, origin),
   recipient: recipients(draft),
   recipients: recipientAddresses(draft),
@@ -57,6 +61,8 @@ export const fingerprint = (value: Snapshot): string => JSON.stringify(value);
 
 const snapshotSchema = z.object({
   draftId: z.string(),
+  // Registrations saved before link text was sent have none.
+  linkText: z.record(z.string(), z.string()).default({}),
   links: z.array(z.string()),
   recipient: z.string(),
   recipients: z.array(z.string()),

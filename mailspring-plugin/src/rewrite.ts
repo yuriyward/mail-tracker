@@ -1,4 +1,6 @@
 import { checkDestination } from "../../src/destinations";
+import { cleanLinkText } from "../../src/link-names";
+import type { LinkTexts } from "../../src/link-names";
 import type { TokenSet } from "./registry";
 
 /** Quoted earlier messages; their links are left as they were (like Mailspring's own tracking). */
@@ -15,13 +17,47 @@ const normalised = (anchor: Element): string | null => {
  * The URLs to register: https links the Worker accepts, outside quoted text, not already
  * pointing at the tracker; normalised and in order of first appearance.
  */
-export const trackableUrls = (root: ParentNode, origin: string): string[] => {
+const trackableAnchors = (
+  root: ParentNode,
+  origin: string
+): { anchor: Element; url: string }[] => {
   const { host } = new URL(origin);
-  const urls = [...root.querySelectorAll("a[href]")]
-    .filter((anchor) => !isQuoted(anchor))
-    .map((anchor) => normalised(anchor))
-    .filter((url): url is string => url !== null && new URL(url).host !== host);
-  return [...new Set(urls)];
+  return [...root.querySelectorAll("a[href]")].flatMap((anchor) => {
+    const url = isQuoted(anchor) ? null : normalised(anchor);
+    return url === null || new URL(url).host === host ? [] : [{ anchor, url }];
+  });
+};
+
+export const trackableUrls = (root: ParentNode, origin: string): string[] => [
+  ...new Set(trackableAnchors(root, origin).map(({ url }) => url)),
+];
+
+/** An anchor's visible text, or its image's alt text when it only holds an image. */
+const anchorText = (anchor: Element): string => {
+  const text = cleanLinkText(anchor.textContent ?? "");
+  if (text !== "") {
+    return text;
+  }
+  const alt = [...anchor.querySelectorAll("img[alt]")]
+    .map((img) => cleanLinkText(img.getAttribute("alt") ?? ""))
+    .find((value) => value !== "");
+  return alt ?? "";
+};
+
+/**
+ * The text of each trackable URL, from its first anchor that has some; URLs whose anchors
+ * only repeat the URL (autolinked bare URLs) or are empty are left out, so the dashboard
+ * names them by their domain.
+ */
+export const linkTexts = (root: ParentNode, origin: string): LinkTexts => {
+  const texts: LinkTexts = {};
+  for (const { anchor, url } of trackableAnchors(root, origin)) {
+    const text = anchorText(anchor);
+    if (text !== "" && texts[url] === undefined) {
+      texts[url] = text;
+    }
+  }
+  return texts;
 };
 
 /** Removes tracking images already in the body, e.g. quoted from an earlier tracked email. */

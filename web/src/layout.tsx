@@ -6,12 +6,37 @@ import { clockOf } from "./lib/format";
 
 const icon = `${import.meta.env.BASE_URL}favicon.svg`;
 
+export type Section = "emails" | "people";
+
+const NAV: { href: string; label: string; section: Section }[] = [
+  { href: "/app", label: "Emails", section: "emails" },
+  { href: "/app/people", label: "People", section: "people" },
+];
+
+/** A section's own list is the page; one of its emails or people is within it. */
+const currentOf = (
+  section: Section,
+  current: Section,
+  home: boolean
+): "page" | "true" | undefined => {
+  if (section !== current) {
+    return undefined;
+  }
+  return home ? "page" : "true";
+};
+
+const navClass =
+  "type-meta hover:underline aria-[current=page]:font-medium aria-[current=page]:no-underline";
+
 export const Layout = ({
   children,
+  current,
   home,
 }: {
   children: ReactNode;
-  /** The email list is the current page. */
+  /** The section the page belongs to. */
+  current: Section;
+  /** The section's list is the current page (not one email or person). */
   home: boolean;
 }) => (
   <div className="min-h-svh">
@@ -19,12 +44,24 @@ export const Layout = ({
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-6 py-4">
         <img alt="" className="size-6" height={24} src={icon} width={24} />
         <a
-          aria-current={home ? "page" : undefined}
+          aria-current={home && current === "emails" ? "page" : undefined}
           className="type-wordmark text-lg hover:underline aria-[current=page]:no-underline"
           href="/app"
         >
           mail-tracker
         </a>
+        <nav aria-label="Sections" className="ml-auto flex gap-6">
+          {NAV.map((item) => (
+            <a
+              aria-current={currentOf(item.section, current, home)}
+              className={navClass}
+              href={item.href}
+              key={item.section}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
       </div>
     </header>
     <main className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-10">

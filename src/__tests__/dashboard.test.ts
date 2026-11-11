@@ -226,12 +226,14 @@ describe("per-email totals", () => {
         links: [
           {
             clicks: 2,
+            name: "example.org",
             notCounted: 0,
             token: tokens[0] ?? "",
             url: "https://example.org/a",
           },
           {
             clicks: 0,
+            name: "example.org",
             notCounted: 1,
             token: tokens[1] ?? "",
             url: "https://example.org/b",
@@ -241,9 +243,11 @@ describe("per-email totals", () => {
       },
       firstOpen,
       lastOpen,
+      lastReopen: null,
       opens: { counted: 2, human: 1, notCounted: 2, proxy: 1 },
       // Registered without recipients (message-level tokens), as before ADR-0003.
       recipients: [],
+      reopens: 0,
     });
     expect(data.timeline.map((e) => [e.kind, e.class, e.duplicate])).toEqual([
       ["open", "proxy", false],
@@ -283,8 +287,10 @@ describe("per-email totals", () => {
       clicks: { counted: 0, links: [], notCounted: 0 },
       firstOpen: null,
       lastOpen: null,
+      lastReopen: null,
       opens: { counted: 0, human: 0, notCounted: 0, proxy: 0 },
       recipients: [],
+      reopens: 0,
     });
     expect(data.timeline).toEqual([]);
   });
