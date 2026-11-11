@@ -147,11 +147,18 @@ export const recipientActivityRow = z.object({
 });
 export type RecipientActivityRow = z.infer<typeof recipientActivityRow>;
 
-/** A counted, non-repeat open of a probable human or on-open proxy (the re-open signal, src/reopen.ts). */
+/**
+ * A counted, non-repeat open of a probable human or on-open proxy: the input of the
+ * re-open signal (src/reopen.ts) and the Gmail preload hint (src/preload.ts).
+ */
 export const countedOpenRow = z.object({
+  /** The token set's address; null for a message-level token. */
+  address: z.string().nullable(),
   at: z.number(),
+  class: z.enum(EVENT_CLASSES),
   id: z.number(),
   message_token: z.string(),
+  reason: z.string(),
   recipient_token: z.string().nullable(),
 });
 export type CountedOpenRow = z.infer<typeof countedOpenRow>;

@@ -1,17 +1,24 @@
 /**
- * The re-open signal. Within one recipient's token set, a counted open (a probable human,
- * or an on-open image proxy such as Gmail's) that comes REOPEN_GAP_MS or more after that
- * set's previous counted open is a re-open: the recipient came back to the email. An
- * on-open proxy fetches only when the recipient opens, so Gmail recipients can re-open
- * (owner, 2026-11-11). Prefetches (Apple Mail Privacy Protection, Private Relay),
- * scanners, own hits and repeats are not counted, so they neither start nor resume a
- * run. Worked out when the data is read; it changes no count. Kept free of Worker-only
+ * The re-open signal. Within one recipient's token set, a counted open that comes long
+ * enough after that set's previous counted open is a re-open: the recipient came back to
+ * the email. For a probable human that is REOPEN_GAP_MS; for an on-open image proxy such
+ * as Gmail's it is PROXY_REOPEN_GAP_MS (owner, 2026-11-12). An on-open proxy fetches only
+ * when the recipient opens, so Gmail recipients can re-open (owner, 2026-11-11), but a hit
+ * marked "possibly preloaded by Gmail" (src/preload.ts) is never a re-open; it still
+ * counts as the set's previous open for the next one. Prefetches (Apple Mail Privacy
+ * Protection, Private Relay), scanners, own hits and repeats are not counted, so they
+ * neither start nor resume a run. Worked out when the data is read; it changes no count. Kept free of Worker-only
  * imports so the dashboard app can bundle it.
  */
 import type { EventRow } from "./schema";
 
-/** A new open at least this long after the previous one is a re-open. */
-export const REOPEN_GAP_MS = 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+
+/** A probable human's open at least this long after the previous one is a re-open. */
+export const REOPEN_GAP_MS = HOUR;
+
+/** An on-open proxy's open at least this long after the previous one is a re-open. */
+export const PROXY_REOPEN_GAP_MS = 6 * HOUR;
 
 /** A counted open, keyed by the token set (or email, for old tokens) it came through. */
 export interface CountedOpen {
@@ -19,6 +26,10 @@ export interface CountedOpen {
   at: number;
   /** Opens are compared within a group only: one recipient's token set. */
   group: string;
+  /** Fetched by an on-open image proxy (class 'proxy'), not a probable human. */
+  proxy: boolean;
+  /** Marked "possibly preloaded by Gmail" (src/preload.ts): never a re-open. */
+  preloaded: boolean;
 }
 
 export interface Reopens {
@@ -48,12 +59,22 @@ export const openGroup = (
   messageToken: string
 ): string => recipientToken ?? `message:${messageToken}`;
 
-export const countedOpensOf = (events: readonly EventRow[]): CountedOpen[] =>
+/** `preloaded`: ids of the hits marked as possible Gmail preloads (src/preload.ts). */
+export const countedOpensOf = (
+  events: readonly EventRow[],
+  preloaded: ReadonlySet<number> | ReadonlyMap<number, unknown>
+): CountedOpen[] =>
   events.filter(isCountedOpen).map((e) => ({
     at: e.at,
     group: openGroup(e.recipient_token, e.message_token),
     id: e.id,
+    preloaded: preloaded.has(e.id),
+    proxy: e.class === "proxy",
   }));
+
+/** The gap an open needs after the set's previous one to be a re-open. */
+export const reopenGap = (open: CountedOpen): number =>
+  open.proxy ? PROXY_REOPEN_GAP_MS : REOPEN_GAP_MS;
 
 /** The opens that are re-opens, oldest first. */
 export const findReopens = (opens: readonly CountedOpen[]): CountedOpen[] => {
@@ -62,7 +83,11 @@ export const findReopens = (opens: readonly CountedOpen[]): CountedOpen[] => {
   const found: CountedOpen[] = [];
   for (const open of sorted) {
     const before = previous.get(open.group);
-    if (before !== undefined && open.at - before >= REOPEN_GAP_MS) {
+    if (
+      before !== undefined &&
+      !open.preloaded &&
+      open.at - before >= reopenGap(open)
+    ) {
       found.push(open);
     }
     previous.set(open.group, open.at);

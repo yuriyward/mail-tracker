@@ -139,7 +139,7 @@ describe("re-open signal", () => {
     });
   });
 
-  test("a Gmail recipient whose opens all come through the image proxy re-opens, and the median counts the proxy's first open", async () => {
+  test("a Gmail recipient whose opens all come through the image proxy re-opens after six hours, and the median counts the proxy's first open", async () => {
     const email = await sendTo("<g1@example.test>", ["gil@example.com"]);
     const gil = setOf(email, "gil@example.com");
     const gmail = { "User-Agent": GMAIL_PROXY };
@@ -148,10 +148,14 @@ describe("re-open signal", () => {
     await h.hit(gil.imageUrl, gmail);
     h.state.clock += 20 * MINUTE;
     await h.hit(gil.imageUrl, gmail);
-    h.state.clock += HOUR;
+    // An hour is enough for a probable human, not for an on-open proxy.
+    h.state.clock += 2 * HOUR;
+    await h.hit(gil.imageUrl, gmail);
+    h.state.clock += 6 * HOUR;
     const reopenAt = h.state.clock;
     await h.hit(gil.imageUrl, gmail);
     expect(h.events().map((e) => [e.class, e.counted])).toEqual([
+      ["proxy", 1],
       ["proxy", 1],
       ["proxy", 1],
       ["proxy", 1],
@@ -178,6 +182,73 @@ describe("re-open signal", () => {
       medianFirstOpen: 15 * MINUTE,
       reopens: 1,
     });
+  });
+
+  test("Gmail preloading a neighbouring email: both count as opened, the later hit is hinted and never a re-open", async () => {
+    const test4 = await sendTo("<t4@example.test>", ["gil@example.com"]);
+    const test5 = await sendTo("<t5@example.test>", ["gil@example.com"]);
+    const gmail = { "User-Agent": GMAIL_PROXY };
+    const pixel4 = setOf(test4, "gil@example.com").imageUrl;
+    const pixel5 = setOf(test5, "gil@example.com").imageUrl;
+    // As live (2026-11-11 23:33:01 and :02): test 4 opened, test 5 fetched 1 s later.
+    await h.hit(pixel4, gmail);
+    h.state.clock += 1000;
+    const preloadAt = h.state.clock;
+    await h.hit(pixel5, gmail);
+    // The next day test 4 is opened again and test 5 fetched 12 s later (23:33:19, :31).
+    h.state.clock += 20 * HOUR;
+    const reopenAt = h.state.clock;
+    await h.hit(pixel4, gmail);
+    h.state.clock += 12_000;
+    const secondPreloadAt = h.state.clock;
+    await h.hit(pixel5, gmail);
+
+    const listed = await appJson("/app/data", listDataSchema);
+    expect(
+      listed.messages.map((m) => [m.token, m.opens, m.openedBy, m.reopens])
+    ).toEqual([
+      [test5.token, 2, 1, 0],
+      [test4.token, 2, 1, 1],
+    ]);
+    const data = await appJson(
+      `/app/messages/${test5.token}/data`,
+      detailDataSchema
+    );
+    expect(
+      data.timeline.map((e) => [e.at, e.preloadHint !== null, e.reopen])
+    ).toEqual([
+      [preloadAt, true, false],
+      [secondPreloadAt, true, false],
+    ]);
+    expect(data.timeline[0]?.preloadHint).toStartWith(
+      "possibly preloaded by Gmail: fetched 1 s after"
+    );
+    expect(data.totals).toMatchObject({ opens: { counted: 2 }, reopens: 0 });
+    const first = await appJson(
+      `/app/messages/${test4.token}/data`,
+      detailDataSchema
+    );
+    expect(first.timeline.map((e) => [e.preloadHint, e.reopen])).toEqual([
+      [null, false],
+      [null, true],
+    ]);
+    expect(first.totals.lastReopen).toBe(reopenAt);
+
+    const api = await h.read(`/api/messages/${test5.token}`);
+    const body = z
+      .object({
+        events: z.array(z.object({ preloadHint: z.string().nullable() })),
+      })
+      .parse(await api.json());
+    expect(body.events.map((e) => e.preloadHint !== null)).toEqual([
+      true,
+      true,
+    ]);
+    const { person } = await appJson(
+      `${personPath("gil@example.com")}/data`,
+      personDataSchema
+    );
+    expect(person).toMatchObject({ emails: 2, opened: 2, reopens: 1 });
   });
 
   test("an Apple prefetch is neither a first open for the median nor part of a run", async () => {

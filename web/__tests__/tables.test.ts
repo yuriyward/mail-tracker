@@ -276,6 +276,7 @@ const event = (id: number, e: Partial<TimelineEvent>): TimelineEvent => ({
   label: "Opened",
   linkName: null,
   network: "",
+  preloadHint: null,
   reason: "synthetic",
   recipient: null,
   reopen: false,

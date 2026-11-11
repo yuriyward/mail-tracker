@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { EVENT_CLASSES, EVENT_LABELS, eventDisplay } from "./classify";
 import { linkName } from "./link-names";
+import { preloadHints } from "./preload";
 import {
   NO_REOPENS,
   findReopens,
@@ -133,10 +134,18 @@ const timelineEventSchema = z.object({
   /** The clicked link's name (its text, else its domain); null for opens. */
   linkName: z.string().nullable(),
   network: z.string(),
+  /**
+   * "possibly preloaded by Gmail" with why (src/preload.ts): still a counted open, never
+   * a re-open; null when none.
+   */
+  preloadHint: z.string().nullable(),
   reason: z.string(),
   /** The token set's address ('' when shared); null for message-level tokens. */
   recipient: z.string().nullable(),
-  /** A counted open (human or on-open proxy) after a gap of an hour or more (src/reopen.ts). */
+  /**
+   * A counted open after a gap of an hour or more (a probable human) or six hours or more
+   * (an on-open proxy), not marked as a possible preload (src/reopen.ts).
+   */
   reopen: z.boolean(),
   /** The clicked link's destination; null for opens. */
   url: z.string().nullable(),
@@ -242,9 +251,10 @@ export const recipientLabel = (address: string): string =>
 export const recipientTotals = (
   recipients: RecipientRow[],
   events: EventRow[],
-  hints: ReadonlyMap<number, string>
+  hints: ReadonlyMap<number, string>,
+  preloads: ReadonlyMap<number, string>
 ): RecipientTotals[] => {
-  const reopens = reopensByGroup(findReopens(countedOpensOf(events)));
+  const reopens = reopensByGroup(findReopens(countedOpensOf(events, preloads)));
   return recipients.flatMap((r) => {
     const own = events.filter((e) => e.recipient_token === r.token);
     if (r.current === 0 && own.length === 0) {
@@ -285,6 +295,8 @@ export interface TotalsInput {
   recipients: RecipientRow[];
   events: EventRow[];
   hints: ReadonlyMap<number, string>;
+  /** Possible Gmail preloads by event id (src/preload.ts). */
+  preloads: ReadonlyMap<number, string>;
 }
 
 /** Per-email totals from its raw events, using the same counting rule as the email list. */
@@ -293,12 +305,13 @@ export const messageTotals = ({
   recipients,
   events,
   hints,
+  preloads,
 }: TotalsInput): Totals => {
   const opens = events.filter((e) => e.kind === "open");
   const countedOpens = opens.filter(counts);
   const clicks = events.filter((e) => e.kind === "click");
   const countedClicks = clicks.filter(counts).length;
-  const reopenEvents = findReopens(countedOpensOf(events));
+  const reopenEvents = findReopens(countedOpensOf(events, preloads));
   return {
     clicks: {
       counted: countedClicks,
@@ -311,7 +324,7 @@ export const messageTotals = ({
       notCounted: opens.length - countedOpens.length,
       proxy: countedOpens.filter((e) => e.class === "proxy").length,
     },
-    recipients: recipientTotals(recipients, events, hints),
+    recipients: recipientTotals(recipients, events, hints, preloads),
     ...range(countedOpens.map((e) => e.at)),
     ...emailReopens(recipients, reopenEvents),
   };
@@ -343,26 +356,31 @@ export interface TimelineContext {
   /** Recipient token to address. */
   addresses: ReadonlyMap<string, string>;
   hints: ReadonlyMap<number, string>;
+  preloads: ReadonlyMap<number, string>;
   /** Ids of the events that are re-opens. */
   reopens: ReadonlySet<number>;
 }
 
 /** What the timeline needs to name each event's link and recipient. */
-export const timelineContext = (
-  links: readonly LinkRow[],
-  recipients: readonly RecipientRow[],
-  events: readonly EventRow[],
-  hints: ReadonlyMap<number, string>
-): TimelineContext => ({
+export const timelineContext = ({
+  links,
+  recipients,
+  events,
+  hints,
+  preloads,
+}: TotalsInput): TimelineContext => ({
   addresses: new Map(recipients.map((r) => [r.token, r.address])),
   hints,
   links: new Map(links.map((link) => [link.token, link])),
-  reopens: new Set(findReopens(countedOpensOf(events)).map((o) => o.id)),
+  preloads,
+  reopens: new Set(
+    findReopens(countedOpensOf(events, preloads)).map((o) => o.id)
+  ),
 });
 
 export const timelineEvent = (
   e: EventRow,
-  { links, addresses, hints, reopens }: TimelineContext
+  { links, addresses, hints, preloads, reopens }: TimelineContext
 ): TimelineEvent => {
   const link = e.link_token === null ? undefined : links.get(e.link_token);
   return {
@@ -377,6 +395,7 @@ export const timelineEvent = (
     ...eventDisplay(e),
     linkName: link ? linkName(link.url, link.text) : null,
     network: e.as_organization,
+    preloadHint: preloads.get(e.id) ?? null,
     reason: e.reason,
     recipient:
       e.recipient_token === null
@@ -395,15 +414,25 @@ export interface ReopenIndex {
   bySet: Map<string, Reopens>;
 }
 
-/** Re-opens per email, from the counted opens of every listed email (store.countedOpens). */
+/**
+ * Re-opens per email, from the counted opens of every listed email (store.countedOpens),
+ * which also give the Gmail preload hints (src/preload.ts).
+ */
 export const reopensByEmail = (
   opens: readonly CountedOpenRow[]
 ): ReopenIndex => {
+  const preloads = preloadHints(opens);
   const emailOf = new Map<string, string>();
   const counted = opens.map((o) => {
     const group = openGroup(o.recipient_token, o.message_token);
     emailOf.set(group, o.message_token);
-    return { at: o.at, group, id: o.id };
+    return {
+      at: o.at,
+      group,
+      id: o.id,
+      preloaded: preloads.has(o.id),
+      proxy: o.class === "proxy",
+    };
   });
   const reopenEvents = findReopens(counted);
   const byEmail = new Map<string, ReturnType<typeof findReopens>>();

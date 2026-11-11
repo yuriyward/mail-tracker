@@ -17,10 +17,8 @@ import type {
 } from "./dashboard-data";
 import type { AppEnv, Db } from "./env";
 import { forwardingHints } from "./forwarding";
-import { messageDetail } from "./store";
-import type { MessageDetail } from "./store";
-import { isToken } from "./tokens";
-import { listView, peopleView, personView } from "./views";
+import { detailView, listView, peopleView, personView } from "./views";
+import type { DetailView } from "./views";
 
 export { REFRESH_MS } from "./dashboard-data";
 
@@ -73,10 +71,19 @@ const personData = async (
   return view ? { ...view, updated: now } : null;
 };
 
-const detailData = (detail: MessageDetail, now: number): DetailData => {
+const detailData = (
+  { detail, preloads }: DetailView,
+  now: number
+): DetailData => {
   const { message, links, recipients, events } = detail;
-  const hints = forwardingHints(recipients, events);
-  const context = timelineContext(links, recipients, events, hints);
+  const input = {
+    events,
+    hints: forwardingHints(recipients, events),
+    links,
+    preloads,
+    recipients,
+  };
+  const context = timelineContext(input);
   return {
     message: {
       recipient: message.recipient,
@@ -86,16 +93,10 @@ const detailData = (detail: MessageDetail, now: number): DetailData => {
       token: message.token,
     },
     timeline: events.map((e) => timelineEvent(e, context)),
-    totals: messageTotals({ events, hints, links, recipients }),
+    totals: messageTotals(input),
     updated: now,
   };
 };
-
-const findDetail = async (
-  db: Db,
-  token: string
-): Promise<MessageDetail | null> =>
-  isToken(token) ? await messageDetail(db, token) : null;
 
 /**
  * Reads one file of the built app from the Workers Assets binding. Only reached after
@@ -155,9 +156,9 @@ export const dashboardRoutes = (now: () => number, jwks: JwksSource) => {
   );
 
   app.get("/messages/:token/data", async (c) => {
-    const detail = await findDetail(c.env.DB, c.req.param("token"));
-    return detail
-      ? c.json(detailData(detail, now()), 200, HEADERS)
+    const view = await detailView(c.env.DB, c.req.param("token"));
+    return view
+      ? c.json(detailData(view, now()), 200, HEADERS)
       : c.json({ error: "not found" }, 404, HEADERS);
   });
 

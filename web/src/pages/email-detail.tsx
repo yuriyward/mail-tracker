@@ -24,6 +24,7 @@ import type {
   TimelineEvent,
   Totals,
 } from "../../../src/dashboard-data";
+import { PRELOAD_HINT } from "../../../src/preload";
 import { LinkName, PersonLink } from "../badges";
 import { FigureRow } from "../figure-row";
 import { Hint } from "../hint";
@@ -222,6 +223,11 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
             <Badge variant="secondary">possibly forwarded</Badge>
           </Hint>
         )}
+        {row.original.preloadHint !== null && (
+          <Hint label={row.original.preloadHint}>
+            <Badge variant="secondary">{PRELOAD_HINT}</Badge>
+          </Hint>
+        )}
       </span>
     ),
     header: "Class",
@@ -237,7 +243,11 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
   },
   {
     cell: ({ row }) => {
-      const reason = [row.original.reason, row.original.hint]
+      const reason = [
+        row.original.reason,
+        row.original.hint,
+        row.original.preloadHint,
+      ]
         .filter((part) => part !== null)
         .join("; ");
       return <Truncated label={reason}>{reason}</Truncated>;

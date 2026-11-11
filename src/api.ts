@@ -12,7 +12,6 @@ import { mintRequest, sentRequest } from "./schema";
 import type { MintRequest } from "./schema";
 import {
   markSent,
-  messageDetail,
   pixelOwner,
   registerMessage,
   tokenSetLinks,
@@ -20,7 +19,7 @@ import {
 } from "./store";
 import type { RecipientSet } from "./store";
 import { isToken, newToken } from "./tokens";
-import { listView, peopleView, personView } from "./views";
+import { detailView, listView, peopleView, personView } from "./views";
 import type { ListView } from "./views";
 
 const LIST_LIMIT = 500;
@@ -258,14 +257,15 @@ export const apiRoutes = (now: () => number) => {
 
   /**
    * The raw rows, plus per-recipient figures and, on each event, `hint`: the forwarding
-   * hint with its reason, or null (src/forwarding.ts).
+   * hint with its reason, or null (src/forwarding.ts), and `preloadHint`: "possibly
+   * preloaded by Gmail" with why, or null (src/preload.ts).
    */
   app.get("/messages/:token", readAuth, async (c) => {
-    const token = c.req.param("token");
-    const detail = isToken(token) ? await messageDetail(c.env.DB, token) : null;
-    if (!detail) {
+    const view = await detailView(c.env.DB, c.req.param("token"));
+    if (!view) {
       return c.json({ error: "not found" }, 404);
     }
+    const { detail, preloads } = view;
     const hints = forwardingHints(detail.recipients, detail.events);
     return c.json({
       // `label`, `via`: the plain label, "Draft preview" for a preview (ADR-0004).
@@ -273,6 +273,7 @@ export const apiRoutes = (now: () => number) => {
         ...e,
         ...eventDisplay(e),
         hint: hints.get(e.id) ?? null,
+        preloadHint: preloads.get(e.id) ?? null,
       })),
       // `name`: the link's text in the email, else its domain.
       links: detail.links.map((link) => ({
@@ -280,7 +281,12 @@ export const apiRoutes = (now: () => number) => {
         name: linkName(link.url, link.text),
       })),
       message: detail.message,
-      recipients: recipientTotals(detail.recipients, detail.events, hints),
+      recipients: recipientTotals(
+        detail.recipients,
+        detail.events,
+        hints,
+        preloads
+      ),
     });
   });
 

@@ -460,12 +460,14 @@ export const messageDetail = async (
 
 /**
  * Every counted, non-repeat open (probable human or on-open image proxy) through a current recipient's token set
- * or a message-level token, oldest first: the input of the re-open signal (src/reopen.ts).
+ * or a message-level token, oldest first: the input of the re-open signal (src/reopen.ts)
+ * and of the Gmail preload hint (src/preload.ts), which compares emails to one address.
  */
 export const countedOpens = async (db: Db): Promise<CountedOpenRow[]> =>
   await many(
     db.prepare(
-      `SELECT e.id, e.at, e.message_token, e.recipient_token FROM events e
+      `SELECT e.id, e.at, e.message_token, e.recipient_token, e.class, e.reason,
+         r.address FROM events e
        JOIN messages m ON m.token = e.message_token
        LEFT JOIN recipients r ON r.token = e.recipient_token
        WHERE e.kind = 'open' AND e.class IN ('human', 'proxy') AND ${COUNTED}

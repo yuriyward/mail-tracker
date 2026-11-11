@@ -6,17 +6,20 @@ import { listMessage, reopensByEmail } from "./dashboard-data";
 import type { ListMessage, Person, PersonEmail } from "./dashboard-data";
 import type { Db } from "./env";
 import { peopleOf, personEmail, personOf } from "./people";
+import { preloadHints } from "./preload";
 import { normaliseAddress } from "./recipients";
 import { NO_REOPENS } from "./reopen";
 import type { Reopens } from "./reopen";
 import type { MessageSummary } from "./schema";
-import type { Listed } from "./store";
+import type { Listed, MessageDetail } from "./store";
 import {
   currentAddresses,
   countedOpens,
   listMessages,
+  messageDetail,
   recipientActivity,
 } from "./store";
+import { isToken } from "./tokens";
 
 export interface ListView {
   summaries: MessageSummary[];
@@ -44,6 +47,27 @@ export const listView = async (
     ),
     summaries,
   };
+};
+
+export interface DetailView {
+  detail: MessageDetail;
+  /** Possible Gmail preloads by event id: they compare this email with the others. */
+  preloads: Map<number, string>;
+}
+
+/** One email's rows, with the Gmail preload hints worked out over every email. */
+export const detailView = async (
+  db: Db,
+  token: string
+): Promise<DetailView | null> => {
+  if (!isToken(token)) {
+    return null;
+  }
+  const [detail, opens] = await Promise.all([
+    messageDetail(db, token),
+    countedOpens(db),
+  ]);
+  return detail ? { detail, preloads: preloadHints(opens) } : null;
 };
 
 /** Re-opens per current token set, over every listed email. */

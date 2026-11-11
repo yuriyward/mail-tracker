@@ -7,8 +7,11 @@ import {
   linkName,
 } from "../link-names";
 import { median, peopleOf, personOf } from "../people";
+import { PRELOAD_HINT, PRELOAD_WINDOW_MS, preloadHints } from "../preload";
+import type { PreloadCandidate } from "../preload";
 import {
   NO_REOPENS,
+  PROXY_REOPEN_GAP_MS,
   REOPEN_GAP_MS,
   findReopens,
   countedOpensOf,
@@ -68,7 +71,11 @@ const open = (id: number, at: number, group = "set-a"): CountedOpen => ({
   at,
   group,
   id,
+  preloaded: false,
+  proxy: false,
 });
+
+const NONE = new Set<number>();
 
 const event = (id: number, at: number, e: Partial<EventRow>): EventRow => ({
   as_organization: "",
@@ -140,21 +147,53 @@ describe("re-open detection", () => {
       event(5, T0 + 5 * HOUR, { duplicate: 1 }),
       event(6, T0 + 6 * HOUR, { kind: "click" }),
     ];
-    expect(findReopens(countedOpensOf(events))).toEqual([]);
+    expect(findReopens(countedOpensOf(events, NONE))).toEqual([]);
     const later = [...events, event(7, T0 + 7 * HOUR, {})];
-    expect(findReopens(countedOpensOf(later)).map((o) => o.id)).toEqual([7]);
+    expect(findReopens(countedOpensOf(later, NONE)).map((o) => o.id)).toEqual([
+      7,
+    ]);
   });
 
-  test("Gmail's on-open proxy re-opens: counted proxy opens take part", () => {
+  test("Gmail's on-open proxy re-opens after six hours: counted proxy opens take part", () => {
     const gmail = { class: "proxy", counted: 1 } as const;
     const events = [
       event(1, T0, gmail),
       event(2, T0 + 20 * MINUTE, gmail),
-      event(3, T0 + 2 * HOUR, gmail),
-      // A probable human after a proxy open is measured from the proxy open.
-      event(4, T0 + 2 * HOUR + 30 * MINUTE, {}),
+      // Two hours after the previous open: a human would re-open, a proxy hit does not.
+      event(3, T0 + 2 * HOUR + 20 * MINUTE, gmail),
+      event(4, T0 + 2 * HOUR + 20 * MINUTE + PROXY_REOPEN_GAP_MS, gmail),
+      // A probable human after a proxy open is measured from the proxy open, with the hour.
+      event(5, T0 + 8 * HOUR + 20 * MINUTE + 59 * MINUTE, {}),
+      event(6, T0 + 8 * HOUR + 20 * MINUTE + 59 * MINUTE + HOUR, {}),
     ];
-    expect(findReopens(countedOpensOf(events)).map((o) => o.id)).toEqual([3]);
+    expect(findReopens(countedOpensOf(events, NONE)).map((o) => o.id)).toEqual([
+      4, 6,
+    ]);
+  });
+
+  test("a proxy open one minute short of six hours is no re-open", () => {
+    const gmail = { class: "proxy", counted: 1 } as const;
+    const events = [
+      event(1, T0, gmail),
+      event(2, T0 + PROXY_REOPEN_GAP_MS - MINUTE, gmail),
+    ];
+    expect(findReopens(countedOpensOf(events, NONE))).toEqual([]);
+  });
+
+  test("a hit marked as a possible Gmail preload is never a re-open, but is the previous open", () => {
+    const gmail = { class: "proxy", counted: 1 } as const;
+    const events = [
+      event(1, T0, gmail),
+      event(2, T0 + 7 * HOUR, gmail),
+      // Two hours after the preload: measured from it, so no re-open either.
+      event(3, T0 + 9 * HOUR, gmail),
+    ];
+    expect(
+      findReopens(countedOpensOf(events, new Set([2]))).map((o) => o.id)
+    ).toEqual([]);
+    expect(findReopens(countedOpensOf(events, NONE)).map((o) => o.id)).toEqual([
+      2,
+    ]);
   });
 
   test("message-level tokens group by email", () => {
@@ -162,9 +201,115 @@ describe("re-open detection", () => {
       event(1, T0, { recipient_token: null }),
       event(2, T0 + 2 * HOUR, { recipient_token: null }),
     ];
-    expect(findReopens(countedOpensOf(events))).toEqual([
-      { at: T0 + 2 * HOUR, group: "message:msg", id: 2 },
+    expect(findReopens(countedOpensOf(events, NONE))).toEqual([
+      {
+        at: T0 + 2 * HOUR,
+        group: "message:msg",
+        id: 2,
+        preloaded: false,
+        proxy: false,
+      },
     ]);
+  });
+});
+
+/** Live finding, 2026-11-11 (owner's local time): tests 4 and 5 to one Gmail address. */
+const LIVE = (time: string): number => Date.parse(`2026-11-11T${time}Z`);
+const GMAIL_REASON = "on-open image proxy (GoogleImageProxy)";
+
+const hit = (
+  id: number,
+  at: number,
+  c: Partial<PreloadCandidate> = {}
+): PreloadCandidate => ({
+  address: "ann@example.com",
+  at,
+  class: "proxy",
+  id,
+  message_token: "test-4",
+  reason: GMAIL_REASON,
+  ...c,
+});
+const test5 = { message_token: "test-5" };
+
+describe("Gmail preload hint", () => {
+  test("the live pairs: the later hit of each pair is a possible preload", () => {
+    const hits = [
+      hit(1, LIVE("23:31:57")),
+      hit(2, LIVE("23:31:57"), test5),
+      hit(3, LIVE("23:33:01")),
+      hit(4, LIVE("23:33:02"), test5),
+      hit(5, LIVE("23:33:19")),
+      hit(6, LIVE("23:33:31"), test5),
+    ];
+    const hints = preloadHints(hits);
+    expect([...hints.keys()].toSorted((a, b) => a - b)).toEqual([2, 4, 6]);
+    expect(hints.get(4)).toStartWith(`${PRELOAD_HINT}: fetched 1 s after`);
+    expect(hints.get(6)).toStartWith(`${PRELOAD_HINT}: fetched 12 s after`);
+  });
+
+  test("the hint is only a hint: every live hit still counts as an open, none re-opens", () => {
+    const events = [
+      ["23:31:57", "test-4"],
+      ["23:31:57", "test-5"],
+      ["23:33:01", "test-4"],
+      ["23:33:02", "test-5"],
+      ["23:33:19", "test-4"],
+      ["23:33:31", "test-5"],
+    ].map(([time = "", message = ""], index) =>
+      event(index + 1, LIVE(time), {
+        class: "proxy",
+        message_token: message,
+        reason: GMAIL_REASON,
+        recipient_token: `set-${message}`,
+      })
+    );
+    const preloads = preloadHints(
+      events.map((e) => ({ ...e, address: "ann@example.com" }))
+    );
+    const opens = countedOpensOf(events, preloads);
+    expect(opens).toHaveLength(6);
+    expect(opens.filter((o) => o.preloaded).map((o) => o.id)).toEqual([
+      2, 4, 6,
+    ]);
+    expect(findReopens(opens)).toEqual([]);
+  });
+
+  test("further apart than the window, the same email, or another person: no hint", () => {
+    const hints = preloadHints([
+      hit(1, T0),
+      hit(2, T0 + PRELOAD_WINDOW_MS + 1000, test5),
+      // The same email fetched twice is a repeat, not a neighbour.
+      hit(3, T0 + 2 * HOUR),
+      hit(4, T0 + 2 * HOUR + 1000),
+      // Another person's email.
+      hit(5, T0 + 4 * HOUR),
+      hit(6, T0 + 4 * HOUR + 1000, { address: "bob@example.com", ...test5 }),
+    ]);
+    expect(hints).toEqual(new Map());
+  });
+
+  test("exactly at the window still counts; within it, any order of input", () => {
+    const hints = preloadHints([
+      hit(2, T0 + PRELOAD_WINDOW_MS, test5),
+      hit(1, T0),
+    ]);
+    expect([...hints.keys()]).toEqual([2]);
+  });
+
+  test("only on-open Gmail proxy hits of a known address are compared", () => {
+    const hints = preloadHints([
+      hit(1, T0),
+      // A probable human, Yahoo's proxy, a shared copy and a message-level token.
+      hit(2, T0 + 1000, { class: "human", reason: "browser", ...test5 }),
+      hit(3, T0 + 2000, {
+        message_token: "test-6",
+        reason: "on-open image proxy (YahooMailProxy)",
+      }),
+      hit(4, T0 + 3000, { address: "", message_token: "test-7" }),
+      hit(5, T0 + 4000, { address: null, message_token: "test-8" }),
+    ]);
+    expect(hints).toEqual(new Map());
   });
 });
 
