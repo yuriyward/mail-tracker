@@ -21,6 +21,17 @@ export const UNKNOWN_TOKEN = "AAAAAAAAAAAAAAAAAAAAAA";
 export const HOUR = 3_600_000;
 export const START = 1_800_000_000_000;
 
+/** Files of the built app by URL path, as the ASSETS binding serves them. */
+export type AppFiles = Record<string, string>;
+
+/** A stand-in for the built app in the ASSETS binding (the real build is tested separately). */
+export const APP_FILES = {
+  "/app/assets/index-test.js": "console.log('app');",
+  "/app/favicon.svg": "<svg></svg>",
+  "/app/index.html":
+    '<!doctype html><script type="module" src="/app/assets/index-test.js"></script>',
+} satisfies AppFiles;
+
 export const minted = z.object({
   imageUrl: z.string(),
   links: z.array(z.object({ redirectUrl: z.string(), url: z.string() })),
@@ -79,11 +90,25 @@ export const createHarness = async () => {
     rotated: [keys.public],
   };
   const db = testDb();
+  /** Every path the Worker asked the ASSETS binding for. */
+  const assetCalls: string[] = [];
+  let files = new Map(Object.entries(APP_FILES));
   const env: Bindings & { DB: Db } = {
     ACCESS_AUD: AUD,
     ACCESS_TEAM_DOMAIN: TEAM,
     API_READ_TOKEN: READ_TOKEN,
     API_TOKEN,
+    ASSETS: {
+      fetch: async (request) => {
+        await Promise.resolve();
+        const { pathname } = new URL(request.url);
+        assetCalls.push(pathname);
+        const body = files.get(pathname);
+        return body === undefined
+          ? new Response("missing", { status: 404 })
+          : new Response(body, { headers: { "Content-Type": "text/plain" } });
+      },
+    },
     DB: db,
     SELF_IPS: OWNER_IP,
   };
@@ -200,8 +225,14 @@ export const createHarness = async () => {
   const read = async (route: string, token = READ_TOKEN): Promise<Response> =>
     await call(route, { headers: { Authorization: `Bearer ${token}` } });
 
+  /** Serves these files from ASSETS instead of APP_FILES. */
+  const serveFiles = (next: AppFiles) => {
+    files = new Map(Object.entries(next));
+  };
+
   return {
     accessJwt,
+    assetCalls,
     call,
     db,
     env,
@@ -213,6 +244,7 @@ export const createHarness = async () => {
     mintOk,
     read,
     rows,
+    serveFiles,
     state,
   };
 };

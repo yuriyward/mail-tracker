@@ -1,0 +1,881 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./shadcn-tailwind.css";
+@import "@fontsource-variable/dm-sans/wght.css";
+@import "@fontsource-variable/dm-sans/wght-italic.css";
+@import "@fontsource/instrument-serif/400.css";
+@import "@fontsource/instrument-serif/400-italic.css";
+
+/*
+ * LittleBit Bauhaus — themed from DESIGN.md v1.8.
+ * Light (warm paper) is the default. Warm graphite is enabled by `.dark` (shadcn convention)
+ * or `[data-theme="dark"]` (DESIGN.md convention); both scope to descendants. Before or without the
+ * theme script, <html> has neither (nor `.light`), and a dark system setting shows Warm graphite.
+ */
+@custom-variant dark {
+  &:is(.dark *, [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:is(:root:not(.light, .dark, [data-theme]) *) {
+      @slot;
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    /* v1.6: anchor jumps land below the fixed header. */
+    scroll-padding-top: 5rem;
+    text-rendering: optimizeLegibility;
+    @apply font-sans;
+    @media (prefers-reduced-motion: no-preference) {
+      scroll-behavior: smooth;
+    }
+  }
+  body {
+    font-feature-settings: "ss01" off;
+    @apply bg-background text-foreground;
+  }
+  /*
+   * Tailwind v4 resets buttons to cursor: default. Restore the pointer on everything clickable
+   * (shadcn's recommended v4 addition). Component utilities such as menu items' cursor-default win.
+   */
+  :is(
+    button,
+    a[href],
+    summary,
+    select,
+    label[for],
+    [role="button"],
+    [role="tab"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="switch"],
+    [role="option"],
+    button[role="combobox"],
+    div[role="combobox"]
+  ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
+    cursor: pointer;
+  }
+  /* The current location (current page link, active tab) is not an action: plain cursor. */
+  [aria-current="page"],
+  [aria-current="location"],
+  [aria-current="step"],
+  [data-current="true"] {
+    cursor: default;
+  }
+  :is(
+    button,
+    [role="button"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="switch"],
+    select
+  ):is(:disabled, [aria-disabled="true"], [data-disabled]) {
+    cursor: not-allowed;
+  }
+  ::selection {
+    color: var(--field-yellow-foreground);
+    background: var(--highlight);
+  }
+}
+
+/* Design system page only: pin hover / focus / active with data-preview="…". */
+@custom-variant hover {
+  @media (hover: hover) {
+    &:hover {
+      @slot;
+    }
+  }
+  &[data-preview~="hover"] {
+    @slot;
+  }
+}
+@custom-variant focus-visible (&:focus-visible, &[data-preview~="focus"]);
+@custom-variant active (&:active, &[data-preview~="active"]);
+
+/* ------------------------------------------------------------------ */
+/* Tokens: light (warm paper). Values are verbatim from DESIGN.md.      */
+/* ------------------------------------------------------------------ */
+:root {
+  --paper: #f5f1e8;
+  --ink: #141414;
+  --ink-muted: #5b5955;
+  --brick: #c9432b;
+  --cobalt: #2b4bd8;
+  --ochre: #e0b62c;
+  --white: #ffffff;
+
+  /* shadcn semantic roles */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--paper);
+  --card-foreground: var(--ink);
+  --popover: var(--paper);
+  --popover-foreground: var(--ink);
+  --primary: var(--cobalt);
+  --primary-foreground: var(--white);
+  --primary-hover: color-mix(in srgb, var(--cobalt) 82%, var(--ink));
+  --secondary: color-mix(in srgb, var(--ink) 6%, var(--paper));
+  --secondary-foreground: var(--ink);
+  --muted: var(--secondary);
+  --muted-foreground: var(--ink-muted);
+  --accent: color-mix(in srgb, var(--ink) 10%, var(--paper));
+  --accent-foreground: var(--ink);
+  --destructive: var(--brick);
+  --destructive-foreground: var(--white);
+  /* Derived: brick text on paper is 4.31:1, so error text uses a deeper brick (5.3:1). */
+  --destructive-text: #b13a24;
+  --destructive-hover: color-mix(in srgb, var(--brick) 85%, var(--ink));
+  /* v1.5: an invalid field's border on hover. */
+  --destructive-strong: color-mix(in srgb, var(--brick) 72%, var(--ink));
+  --border: color-mix(in srgb, var(--ink) 25%, var(--paper));
+  --input: color-mix(in srgb, var(--ink) 55%, var(--paper));
+  --ring: var(--ink);
+
+  /* LittleBit roles without a shadcn slot */
+  --rule-strong: var(--ink);
+  --field-blue: var(--cobalt);
+  --field-blue-foreground: var(--paper);
+  --field-yellow: var(--ochre);
+  --field-yellow-foreground: var(--ink);
+  --field-ink: var(--ink);
+  --field-ink-foreground: var(--paper);
+  --surface-reading: var(--paper);
+  --surface-reading-foreground: var(--ink);
+  --emphasis: var(--cobalt);
+  --highlight: var(--ochre);
+  --control-hover: color-mix(in srgb, var(--ink) 5%, var(--paper));
+  --control-hover-foreground: var(--ink);
+  --control-selected: var(--ink);
+  --control-selected-foreground: var(--paper);
+  /* v1.5: hover on a selected option that can be switched off. */
+  --control-selected-hover: color-mix(in srgb, var(--ink) 84%, var(--paper));
+  /* v1.6: hover on the highlight (ochre) button, used on ink panels. */
+  --highlight-hover: color-mix(in srgb, var(--ochre) 82%, var(--white));
+  /* v1.5: state hue for success. Info uses primary, warning the yellow field, error destructive. */
+  --success: #2e7048;
+  --success-foreground: var(--white);
+  --chart-mark: var(--ink);
+  --chart-track: color-mix(in srgb, var(--ink) 5%, var(--paper));
+  --illustration-paper: var(--paper);
+  --illustration-ink: var(--ink);
+  --illustration-grid: color-mix(
+    in srgb,
+    var(--illustration-ink) 7%,
+    transparent
+  );
+  /* v1.8: the shadow hero's shaded copy. `shade` is the scene's shadow color; text on it keeps 4.5:1. */
+  --shade: var(--ink);
+  --shade-foreground: #f2eee6;
+  --shade-muted: #b4afa5;
+  --shade-emphasis: #a2b2f4;
+  --shade-highlight: var(--ochre);
+  --shade-primary: #172c89;
+  --shade-primary-foreground: var(--white);
+  --shade-border: color-mix(in srgb, var(--shade-foreground) 45%, transparent);
+
+  /* Chart series. 1 = the single-series mark; 2–5 for multi-series views. */
+  --chart-1: var(--chart-mark);
+  --chart-2: var(--emphasis);
+  --chart-3: var(--highlight);
+  --chart-4: var(--brick);
+  --chart-5: var(--ink-muted);
+
+  /* Sidebar maps onto the page roles. */
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  /* Type families */
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-body:
+    "DM Sans Variable", "DM Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-code: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-label: var(--font-code);
+
+  /* Geometry, spacing and motion */
+  --radius: 0;
+  --space-unit: 0.25rem;
+  --page-max: 75rem;
+  --prose-max: 64ch;
+  --page-gutter: clamp(1.25rem, 4vw, 3rem);
+  --section-space: clamp(3rem, 6vw, 5rem);
+  --rule-width: 1px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-feedback: 160ms;
+  --duration-transition: 240ms;
+  /* Site header controls between the full and compact states: colors at feedback speed, sizes with the
+     header's 300ms move. Used with transition-(…) and duration-(…); the lists pair up in order. */
+  --header-control-properties:
+    color, background-color, border-color, min-height, padding, font-size, gap,
+    width, height;
+  --header-control-durations:
+    var(--duration-feedback), var(--duration-feedback),
+    var(--duration-feedback), 300ms, 300ms, 300ms, 300ms, 300ms, 300ms;
+  color-scheme: light;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tokens: Warm graphite.                                               */
+/* ------------------------------------------------------------------ */
+@utility theme-warm-graphite {
+  --background: #2d302d;
+  --foreground: #e3dfd3;
+  --card: #383c36;
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --primary: #a2b2f4;
+  --primary-foreground: var(--background);
+  --primary-hover: color-mix(in srgb, #a2b2f4 82%, #ffffff);
+  --secondary: var(--card);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--card);
+  --muted-foreground: #b9b8ad;
+  --accent: #3e433b;
+  --accent-foreground: var(--foreground);
+  /* Derived: DESIGN.md defines no dark destructive; brick #c9432b is 2.75:1 on graphite. */
+  --destructive: #f29a85;
+  --destructive-foreground: #252823;
+  --destructive-text: #f29a85;
+  --destructive-hover: color-mix(in srgb, #f29a85 82%, #ffffff);
+  --destructive-strong: color-mix(in srgb, #f29a85 70%, #ffffff);
+  --border: #747b6b;
+  --input: #818779;
+  --ring: var(--foreground);
+  --rule-strong: #818779;
+  --field-blue: #424e70;
+  --field-blue-foreground: var(--foreground);
+  --field-yellow: #d8ba69;
+  --field-yellow-foreground: #252823;
+  --field-ink: #252823;
+  --field-ink-foreground: var(--foreground);
+  --surface-reading: var(--card);
+  --surface-reading-foreground: var(--foreground);
+  --emphasis: var(--primary);
+  --highlight: var(--field-yellow);
+  --control-hover: var(--accent);
+  --control-hover-foreground: var(--foreground);
+  --control-selected: #465477;
+  --control-selected-foreground: var(--foreground);
+  --control-selected-hover: #536189;
+  --highlight-hover: color-mix(in srgb, #d8ba69 80%, #ffffff);
+  --success: #8cc59e;
+  --success-foreground: #252823;
+  --chart-mark: #b3bfa5;
+  --chart-track: #4a5045;
+  --illustration-paper: #c9c5b7;
+  --illustration-ink: #282e2a;
+  /* Illustration ink is near-black here, so the grid takes a light line. */
+  --illustration-grid: color-mix(in srgb, var(--foreground) 6%, transparent);
+  --shade: #252823;
+  --shade-foreground: var(--foreground);
+  --shade-muted: var(--muted-foreground);
+  --shade-emphasis: #a2b2f4;
+  --shade-highlight: #d8ba69;
+  --shade-primary: #424e70;
+  --shade-primary-foreground: var(--foreground);
+  --shade-border: color-mix(in srgb, var(--shade-foreground) 45%, transparent);
+
+  --chart-1: var(--chart-mark);
+  --chart-2: var(--emphasis);
+  --chart-3: var(--highlight);
+  --chart-4: var(--destructive);
+  --chart-5: var(--muted-foreground);
+
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  color-scheme: dark;
+}
+.dark,
+[data-theme="dark"] {
+  @apply theme-warm-graphite;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light, .dark, [data-theme]) {
+    @apply theme-warm-graphite;
+  }
+}
+
+/* Inside an ink panel (field-ink), focus and rules flip to the panel's foreground. */
+.on-ink {
+  --ring: var(--field-ink-foreground);
+  --border: color-mix(
+    in srgb,
+    var(--field-ink-foreground) 30%,
+    var(--field-ink)
+  );
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-text: var(--destructive-text);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-rule-strong: var(--rule-strong);
+  --color-field-blue: var(--field-blue);
+  --color-field-blue-foreground: var(--field-blue-foreground);
+  --color-field-yellow: var(--field-yellow);
+  --color-field-yellow-foreground: var(--field-yellow-foreground);
+  --color-field-ink: var(--field-ink);
+  --color-field-ink-foreground: var(--field-ink-foreground);
+  --color-surface-reading: var(--surface-reading);
+  --color-surface-reading-foreground: var(--surface-reading-foreground);
+  /* Table rows: a step of the reading foreground into the reading surface, so the fill shows in both themes
+     (in Warm graphite `muted` is the same color as the reading surface). */
+  --color-row-hover: color-mix(
+    in srgb,
+    var(--surface-reading-foreground) 6%,
+    var(--surface-reading)
+  );
+  --color-row-selected: color-mix(
+    in srgb,
+    var(--surface-reading-foreground) 11%,
+    var(--surface-reading)
+  );
+  --color-emphasis: var(--emphasis);
+  --color-highlight: var(--highlight);
+  --color-control-hover: var(--control-hover);
+  --color-control-hover-foreground: var(--control-hover-foreground);
+  --color-control-selected: var(--control-selected);
+  --color-control-selected-foreground: var(--control-selected-foreground);
+  --color-control-selected-hover: var(--control-selected-hover);
+  --color-highlight-hover: var(--highlight-hover);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-destructive-strong: var(--destructive-strong);
+  --color-chart-mark: var(--chart-mark);
+  --color-chart-track: var(--chart-track);
+  --color-illustration-paper: var(--illustration-paper);
+  --color-illustration-ink: var(--illustration-ink);
+  --color-shade: var(--shade);
+  --color-shade-foreground: var(--shade-foreground);
+  --color-shade-muted: var(--shade-muted);
+  --color-shade-emphasis: var(--shade-emphasis);
+  --color-shade-highlight: var(--shade-highlight);
+  --color-shade-primary: var(--shade-primary);
+  --color-shade-primary-foreground: var(--shade-primary-foreground);
+  --color-shade-border: var(--shade-border);
+  --color-brick: var(--brick);
+  --color-cobalt: var(--cobalt);
+  --color-ochre: var(--ochre);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+
+  --font-sans: var(--font-body);
+  --font-serif: var(--font-display);
+  --font-mono: var(--font-code);
+  /* Component titles (CardTitle, DialogTitle…) use the serif at 1.5rem+, regular weight only. */
+  --font-heading: var(--font-display);
+
+  /* DESIGN.md: square corners on every ordinary surface. rounded-full stays round. */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+
+  --ease-brand: var(--ease);
+}
+
+/* DESIGN.md: no soft shadows. Depth comes from rules and flat surfaces. The one exception (v1.6) is
+   `shadow-offset`: a hard 6px ink offset, no blur, on popups anchored to a control. */
+@theme {
+  --shadow-offset: 6px 6px 0 var(--rule-strong);
+  --shadow-2xs: 0 0 #0000;
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --shadow-xl: 0 0 #0000;
+  --shadow-2xl: 0 0 #0000;
+  --inset-shadow-2xs: 0 0 #0000;
+  --inset-shadow-xs: 0 0 #0000;
+  --inset-shadow-sm: 0 0 #0000;
+  --drop-shadow-xs: 0 0 #0000;
+  --drop-shadow-sm: 0 0 #0000;
+  --drop-shadow-md: 0 0 #0000;
+  --drop-shadow-lg: 0 0 #0000;
+  --drop-shadow-xl: 0 0 #0000;
+  --drop-shadow-2xl: 0 0 #0000;
+  --text-shadow-2xs: 0 0 #0000;
+  --text-shadow-xs: 0 0 #0000;
+  --text-shadow-sm: 0 0 #0000;
+  --text-shadow-md: 0 0 #0000;
+  --text-shadow-lg: 0 0 #0000;
+  --blur-xs: 0px;
+  --blur-sm: 0px;
+  --blur-md: 0px;
+  --blur-lg: 0px;
+  --blur-xl: 0px;
+  --blur-2xl: 0px;
+  --blur-3xl: 0px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Type scale (DESIGN.md › Typography). Use these instead of text-* so   */
+/* cn() never confuses a size with a color.                             */
+/* ------------------------------------------------------------------ */
+@utility type-display {
+  font-family: var(--font-display);
+  font-size: clamp(3.5rem, 1.75rem + 5vw, 6.875rem);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+}
+/* v1.8: the landing's hero H1, a step smaller than type-display (ShadowHero titleSize="hero"). */
+@utility type-hero {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 1.5rem + 4vw, 5.75rem);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+}
+@utility type-section {
+  font-family: var(--font-display);
+  font-size: clamp(2.25rem, 1.5rem + 2vw, 3.5rem);
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+@utility type-article-title {
+  font-family: var(--font-display);
+  font-size: clamp(3.25rem, 1.75rem + 5vw, 5.5rem);
+  font-weight: 400;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+}
+@utility type-article-h2 {
+  font-family: var(--font-body);
+  font-size: clamp(1.5rem, 1.35rem + 0.5vw, 1.9375rem);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+@utility type-article-h3 {
+  /* DM Sans 500, as on the landing page's sans subheadings. */
+  font-family: var(--font-body);
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+@utility type-feature {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.85rem + 0.5vw, 2.25rem);
+  font-weight: 400;
+  line-height: 1.1;
+}
+/* Evidence values and compact figures: a value that has to sit on one line in a narrow cell. */
+@utility type-value {
+  font-family: var(--font-display);
+  font-size: clamp(1.375rem, 1.1rem + 0.6vw, 1.625rem);
+  font-weight: 400;
+  line-height: 1.2;
+}
+@utility type-pull-quote {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.75rem + 0.5vw, 2.375rem);
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.18;
+}
+@utility type-reading {
+  font-family: var(--font-body);
+  font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.125rem);
+  font-weight: 400;
+  line-height: 1.7;
+}
+/* v1.6: lead paragraph after a section heading. Reading size on a narrower measure, so it reads in two
+   or three comfortable lines per thought. */
+@utility type-lead {
+  max-width: 46ch;
+  font-family: var(--font-body);
+  font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.125rem);
+  font-weight: 400;
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+@utility type-interface {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+@utility type-caption {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+/* Short monospaced eyebrow: uppercase, tracked, muted by default. */
+@utility type-eyebrow {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+/* v1.6: a status marker before an eyebrow (8px square). Color it with bg-highlight, bg-emphasis… */
+@utility eyebrow-marker {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  outline: 1px solid var(--rule-strong);
+  outline-offset: -1px;
+}
+/* v1.6: a value that changed since the last run: ochre fill with an ink outline (ochre alone is too faint). */
+@utility mark-changed {
+  background: var(--highlight);
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
+}
+/* Short metadata, figure indices and compact numbers. */
+@utility type-meta {
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+@utility type-wordmark {
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+}
+
+/* v1.6: the children of a figure build in (opacity and a 6px rise), staggered. Remount the container
+   (React key) to replay. Reduced motion removes it with every other animation. */
+@utility build-in {
+  & > * {
+    animation: build-in 300ms var(--ease) both;
+  }
+  & > :nth-child(2) {
+    animation-delay: 70ms;
+  }
+  & > :nth-child(3) {
+    animation-delay: 140ms;
+  }
+  & > :nth-child(4) {
+    animation-delay: 210ms;
+  }
+  & > :nth-child(n + 5) {
+    animation-delay: 280ms;
+  }
+}
+/* Long-form reading column (DESIGN.md › Reading). */
+@utility prose-lb {
+  max-width: var(--prose-max);
+  font-family: var(--font-body);
+  font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.125rem);
+  line-height: 1.7;
+  color: var(--surface-reading-foreground);
+
+  & > * + * {
+    margin-top: 1.1em;
+  }
+  & h2 {
+    margin-top: 2em;
+    margin-bottom: 0.7em;
+    font-size: clamp(1.5rem, 1.35rem + 0.5vw, 1.9375rem);
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.025em;
+  }
+  & h2 + * {
+    margin-top: 0;
+  }
+  & h3 {
+    margin-top: 1.6em;
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  & a {
+    color: var(--emphasis);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
+  }
+  & a:hover {
+    text-decoration-thickness: 2px;
+  }
+  & strong {
+    font-weight: 700;
+  }
+  & ul,
+  & ol {
+    padding-left: 1.4em;
+  }
+  & ul {
+    list-style: square;
+  }
+  & ol {
+    list-style: decimal;
+  }
+  & li + li {
+    margin-top: 0.45em;
+  }
+  & code {
+    padding: 0.1em 0.35em;
+    font-family: var(--font-code);
+    font-size: 0.875em;
+    background: var(--muted);
+  }
+  & blockquote {
+    padding-block: 1.25rem;
+    margin-block: 2.5rem;
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 1.75rem + 0.5vw, 2.375rem);
+    font-style: italic;
+    line-height: 1.18;
+    border-block: 1px solid var(--rule-strong);
+  }
+}
+
+@keyframes build-in {
+  from {
+    opacity: 0.14;
+    transform: translateY(6px);
+  }
+}
+
+/* v1.8: a pinned Stepper builds its panel as the reader scrolls. The Stepper marks the items it has not
+   reached with data-pending: they wait faint and 6px low. `data-build="inner"` fades only the children, so
+   the cell keeps its fill; `data-build="swap"` also holds the cell on the card color until it is built.
+   Unlayered, so the pending state wins over utilities. Transitions start after the first paint. */
+[data-build]:not([data-build="inner"], [data-build="swap"])[data-pending],
+:is([data-build="inner"], [data-build="swap"])[data-pending] > * {
+  opacity: 0.14;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-build]:not([data-build="inner"], [data-build="swap"], tr)[data-pending],
+  :is([data-build="inner"], [data-build="swap"])[data-pending] > * {
+    transform: translateY(6px);
+  }
+}
+[data-build="swap"][data-pending] {
+  color: var(--foreground);
+  background-color: var(--card);
+}
+[data-build-motion]
+  :is(
+    [data-build]:not([data-build="inner"], [data-build="swap"]),
+    :is([data-build="inner"], [data-build="swap"]) > *
+  ) {
+  transition:
+    opacity 250ms ease,
+    transform 300ms var(--ease);
+}
+[data-build-motion] [data-build="swap"] {
+  transition:
+    background-color 300ms ease,
+    color 300ms ease;
+}
+
+/* Ink-grid signature pattern: flat ink background with narrow gutters between cells. */
+@utility ink-grid {
+  display: grid;
+  gap: 2px;
+  background: var(--rule-strong);
+  border: 2px solid var(--rule-strong);
+}
+
+/* Faint constructed grid, for illustrations only (never behind copy). */
+@utility illustration-grid {
+  background-image:
+    linear-gradient(to right, var(--illustration-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--illustration-grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/*
+ * Focus (DESIGN.md › Interface treatment): visible 3px outline with an offset,
+ * in the theme's ring color. Unlayered so it beats component `outline-none`;
+ * the ring box-shadow is cancelled so there is one focus treatment everywhere.
+ */
+:is(
+  a[href],
+  button,
+  input,
+  textarea,
+  select,
+  summary,
+  [tabindex]:not([tabindex="-1"]),
+  [role="button"],
+  [role="tab"],
+  [role="checkbox"],
+  [role="radio"],
+  [role="switch"],
+  [role="slider"],
+  [role="combobox"],
+  [role="option"],
+  [role="menuitem"]
+):is(:focus-visible, [data-preview~="focus"]) {
+  --tw-ring-shadow: 0 0 #0000;
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Text controls inside an InputGroup: the group shows focus, not the inner control.
+   (Selector specificity is raised to beat the global focus rule above.) */
+[data-slot="input-group"]
+:is(input, textarea)[data-slot]:is(:focus-visible, [data-preview~="focus"]) {
+  outline: none;
+}
+[data-slot="input-group"]:has(:is(input, textarea):focus-visible) {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Items that sit flush inside a framed control (segments of a segmented control, tab list or button group,
+   cells of a ruled grid, rows of a framed list) show focus inside their own edge, so the outline never covers
+   a neighbour or the frame. On a filled item (selected, primary) the ring takes the item's text color and sits
+   2px inside the fill. */
+:is(
+  [data-slot="toggle-group"][data-spacing="0"]
+    > [data-slot="toggle-group-item"],
+  [data-slot="tabs-list"][data-variant="default"] > [role="tab"],
+  [data-slot="button-group"] > [data-slot="button"],
+  .ink-grid a,
+  [data-slot="item-group"] > a[data-slot="item"]
+):is(:focus-visible, [data-preview~="focus"]) {
+  outline-offset: -3px;
+}
+:is(
+  [data-slot="toggle-group"][data-spacing="0"]
+    > [data-slot="toggle-group-item"][aria-pressed="true"],
+  [data-slot="tabs-list"][data-variant="default"]
+    > [role="tab"][aria-selected="true"],
+  [data-slot="button-group"]
+    > [data-slot="button"]:is(
+      [data-variant="default"],
+      [data-variant="destructive"]
+    )
+):is(:focus-visible, [data-preview~="focus"]) {
+  /* 2px of fill, then the ring: at the very edge a page-colored ring would only look like a smaller box. */
+  outline-color: currentColor;
+  outline-offset: -5px;
+}
+
+/* Command palette search: focus can't be anywhere else while the palette is open, so the field shows focus
+   inside its own edge (2px ink, command.tsx) instead of this outline. */
+[data-slot="command-input-wrapper"]
+[data-slot="input-group"]:has(:is(input, textarea):focus-visible) {
+  outline: none;
+}
+
+/* Calendar days sit edge to edge: keep the focus outline inside the day, and use the paper
+   color on the selected (filled) day so it stays visible. */
+[data-slot="calendar"] [data-day]:is(:focus-visible, [data-preview~="focus"]) {
+  outline-offset: -3px;
+}
+[data-slot="calendar"]
+  [data-day][data-selected-single="true"]:is(
+    :focus-visible,
+    [data-preview~="focus"]
+  ) {
+  outline-color: var(--primary-foreground);
+  outline-offset: -5px;
+}
+
+/* Invalid controls keep their error border; on hover it deepens so the control still responds. */
+@media (hover: hover) {
+  :is(
+    input,
+    textarea,
+    select,
+    button,
+    [role="checkbox"],
+    [role="radio"]
+  )[aria-invalid="true"]:not(:disabled):hover,
+  [data-slot="input-group"]:has([aria-invalid="true"]):hover {
+    border-color: var(--destructive-strong);
+  }
+}
+:is(
+  input,
+  textarea,
+  select,
+  button,
+  [role="checkbox"],
+  [role="radio"]
+)[aria-invalid="true"][data-preview~="hover"] {
+  border-color: var(--destructive-strong);
+}
+
+/* Menu, listbox and command items move a highlight, not an outline.
+   (Selector specificity is raised to beat the global focus rule above.) */
+:is(
+  [role="option"],
+  [role="menuitem"],
+  [role="menuitemcheckbox"],
+  [role="menuitemradio"],
+  [cmdk-item]
+)[role]:is(:focus-visible, [data-preview~="focus"]),
+[cmdk-item]:is(:focus-visible, [data-highlighted]) {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

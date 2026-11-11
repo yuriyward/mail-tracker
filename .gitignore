@@ -9,3 +9,4 @@ state/
 mailspring-plugin/lib/
 .wrangler/
 .dev.vars
+web/dist/

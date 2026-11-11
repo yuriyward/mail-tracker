@@ -1,236 +1,67 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
+import { trimTrailingSlash } from "hono/trailing-slash";
 
 import { accessAuth } from "./auth";
 import type { JwksSource } from "./auth";
-import { CLASS_LABELS } from "./classify";
+import { listMessage, messageTotals, timelineEvent } from "./dashboard-data";
+import type { DetailData, ListData } from "./dashboard-data";
 import type { AppEnv, Db } from "./env";
-import { html } from "./html";
-import type { SafeHtml } from "./html";
-import type { EventRow, MessageSummary } from "./schema";
 import { listMessages, messageDetail } from "./store";
 import type { MessageDetail } from "./store";
 import { isToken } from "./tokens";
 
+export { REFRESH_MS } from "./dashboard-data";
+
 const LIST_LIMIT = 200;
 
-/** How often an open, visible dashboard tab asks for fresh rows. */
-export const REFRESH_MS = 15_000;
+/**
+ * The built app (web/) loads its script, styles, fonts and icon from this origin only; no
+ * inline script or style element, no third-party origin.
+ */
+export const CSP = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "font-src 'self'",
+  "img-src 'self'",
+  "connect-src 'self'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join("; ");
 
-/** Scripts and fetches only from this origin; never inline script. */
-export const CSP =
-  "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-
-const HEADERS = {
-  "Cache-Control": "no-store",
+const SECURITY = {
   "Content-Security-Policy": CSP,
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
 };
+const HEADERS = { ...SECURITY, "Cache-Control": "no-store" };
+/** Vite names files under /app/assets/ by content hash, so they never change. */
+const IMMUTABLE = "private, max-age=31536000, immutable";
 
-/**
- * Served as /app/refresh.js. Polls the `data-refresh` URL of the page's tbody while the
- * tab is visible, swaps in the server-rendered (already escaped) rows and shows when.
- */
-const REFRESH_SCRIPT = `"use strict";
-(() => {
-  const rows = document.querySelector("tbody[data-refresh]");
-  const status = document.getElementById("updated");
-  if (!rows || !status) return;
-  let timer;
-  let busy = false;
-  let last = status.textContent;
-  const schedule = () => {
-    clearTimeout(timer);
-    timer = document.hidden ? undefined : setTimeout(tick, ${REFRESH_MS});
-  };
-  const tick = async () => {
-    if (busy) return;
-    busy = true;
-    try {
-      const response = await fetch(rows.dataset.refresh, {
-        cache: "no-store",
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-        redirect: "error",
-      });
-      if (!response.ok) throw new Error(String(response.status));
-      const data = await response.json();
-      rows.innerHTML = data.rows;
-      last = "updated " + data.updated;
-      status.textContent = last;
-    } catch {
-      status.textContent = last + " · refresh failed, retrying (reload if this persists)";
-    } finally {
-      busy = false;
-      schedule();
-    }
-  };
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      schedule();
-    } else {
-      void tick();
-    }
-  });
-  schedule();
-})();
-`;
+/** The app's shell; it routes /app and /app/messages/:token in the browser. */
+const INDEX = "/app/index.html";
 
-const STYLE = html`<style>
-  body {
-    font:
-      14px/1.4 system-ui,
-      sans-serif;
-    margin: 2rem;
-    color: #1b1b1b;
-  }
-  table {
-    border-collapse: collapse;
-    width: 100%;
-  }
-  th,
-  td {
-    text-align: left;
-    padding: 0.35rem 0.6rem;
-    border-bottom: 1px solid #ddd;
-  }
-  .class-human {
-    color: #0a6b2f;
-  }
-  .class-proxy {
-    color: #6b5a0a;
-  }
-  .class-scanner,
-  .class-self,
-  .muted {
-    color: #777;
-  }
-</style>`;
-
-const time = (ms: number | null): SafeHtml | string => {
-  if (ms === null) {
-    return "—";
-  }
-  const iso = new Date(ms).toISOString();
-  return html`<time datetime="${iso}"
-    >${iso.slice(0, 16).replace("T", " ")} UTC</time
-  >`;
+const listData = async (db: Db, now: number): Promise<ListData> => {
+  const messages = await listMessages(db, LIST_LIMIT);
+  return { messages: messages.map((m) => listMessage(m)), updated: now };
 };
 
-const page = (title: string, body: SafeHtml): string =>
-  html`<!doctype html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="robots" content="noindex" />
-        <title>${title} · mail-tracker</title>
-        ${STYLE}
-        <script src="/app/refresh.js" defer></script>
-      </head>
-      <body>
-        ${body}
-      </body>
-    </html>`.value;
-
-/** hh:mm:ss UTC, the moment the rows on screen were read. */
-const clockOf = (ms: number): string =>
-  `${new Date(ms).toISOString().slice(11, 19)} UTC`;
-
-const updated = (ms: number): SafeHtml =>
-  html`<p id="updated" class="muted" aria-live="polite">
-    updated ${clockOf(ms)}
-  </p>`;
-
-/** The JSON a refresh fetch returns: tbody markup, escaped like the page. */
-const refreshJson = (rows: readonly SafeHtml[], ms: number) => ({
-  rows: rows.map((row) => row.value).join(""),
-  updated: clockOf(ms),
-});
-
-const subjectOf = (subject: string): string =>
-  subject === "" ? "(no subject)" : subject;
-
-const messageRow = (m: MessageSummary): SafeHtml =>
-  html`<tr>
-    <td><a href="/app/messages/${m.token}">${subjectOf(m.subject)}</a></td>
-    <td>${m.recipient}</td>
-    <td>${time(m.sent_at)}</td>
-    <td>${time(m.first_open)}</td>
-    <td>${time(m.last_open)}</td>
-    <td>${m.opens}</td>
-    <td>${m.clicks}</td>
-  </tr>`;
-
-const listRows = (messages: MessageSummary[]): SafeHtml[] =>
-  messages.map((m) => messageRow(m));
-
-const listPage = (messages: MessageSummary[], ms: number): string =>
-  page(
-    "Emails",
-    html`<h1>Emails</h1>
-      ${updated(ms)}
-      <table>
-        <thead>
-          <tr>
-            <th>Subject</th>
-            <th>Recipient</th>
-            <th>Sent</th>
-            <th>First open</th>
-            <th>Last open</th>
-            <th>Opens</th>
-            <th>Clicks</th>
-          </tr>
-        </thead>
-        <tbody data-refresh="/app/data">
-          ${listRows(messages)}
-        </tbody>
-      </table>
-      <p class="muted">
-        Opens and clicks count probable humans and on-open image proxies;
-        prefetches, scanners and your own hits appear only in each timeline.
-      </p>`
-  );
-
-const eventRow = (e: EventRow, urls: Map<string, string>): SafeHtml =>
-  html`<tr>
-    <td>${time(e.at)}</td>
-    <td>
-      ${e.kind === "open" ? "open" : `click ${urls.get(e.link_token ?? "") ?? ""}`}
-    </td>
-    <td class="class-${e.class}">${CLASS_LABELS[e.class]}</td>
-    <td>${e.reason}</td>
-    <td class="muted">${e.user_agent} ${e.as_organization} ${e.country}</td>
-  </tr>`;
-
-const eventRows = (detail: MessageDetail): SafeHtml[] => {
-  const urls = new Map(detail.links.map((link) => [link.token, link.url]));
-  return detail.events.map((e) => eventRow(e, urls));
-};
-
-const detailPage = (detail: MessageDetail, ms: number): string => {
-  const { message } = detail;
-  return page(
-    subjectOf(message.subject),
-    html`<p><a href="/app">← All emails</a></p>
-      <h1>${subjectOf(message.subject)}</h1>
-      <p>To ${message.recipient}, sent ${time(message.sent_at)}</p>
-      ${updated(ms)}
-      <table>
-        <thead>
-          <tr>
-            <th>When</th>
-            <th>Event</th>
-            <th>Class</th>
-            <th>Reason</th>
-            <th>Client</th>
-          </tr>
-        </thead>
-        <tbody data-refresh="/app/messages/${message.token}/data">
-          ${eventRows(detail)}
-        </tbody>
-      </table>`
-  );
+const detailData = (detail: MessageDetail, now: number): DetailData => {
+  const { message, links, events } = detail;
+  const urls = new Map(links.map((link) => [link.token, link.url]));
+  return {
+    message: {
+      recipient: message.recipient,
+      sentAt: message.sent_at,
+      subject: message.subject,
+      token: message.token,
+    },
+    timeline: events.map((e) => timelineEvent(e, urls)),
+    totals: messageTotals(links, events),
+    updated: now,
+  };
 };
 
 const findDetail = async (
@@ -239,45 +70,61 @@ const findDetail = async (
 ): Promise<MessageDetail | null> =>
   isToken(token) ? await messageDetail(db, token) : null;
 
+/**
+ * Reads one file of the built app from the Workers Assets binding. Only reached after
+ * accessAuth; wrangler.toml runs the Worker first, so Cloudflare never serves these directly.
+ */
+const serveAsset = async (
+  c: Context<AppEnv>,
+  path: string,
+  cacheControl: string
+): Promise<Response> => {
+  const assets = c.env.ASSETS;
+  if (!assets) {
+    return c.text("The app is not built or not bound (ASSETS)", 500, HEADERS);
+  }
+  const response = await assets.fetch(new Request(new URL(path, c.req.url)));
+  if (!response.ok) {
+    return c.text("Not found", 404, HEADERS);
+  }
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(SECURITY)) {
+    headers.set(name, value);
+  }
+  headers.set("Cache-Control", cacheControl);
+  return new Response(response.body, { headers, status: 200 });
+};
+
 /** The per-email dashboard; Cloudflare Access authenticates, the Worker verifies. */
 export const dashboardRoutes = (now: () => number, jwks: JwksSource) => {
   const app = new Hono<AppEnv>();
   app.use("*", accessAuth(jwks));
+  // After Access: /app/ and /app/messages/:token/ redirect to the path without the slash.
+  app.use("*", trimTrailingSlash());
 
-  app.get("/refresh.js", (c) =>
-    c.body(REFRESH_SCRIPT, 200, {
-      ...HEADERS,
-      "Content-Type": "text/javascript; charset=utf-8",
-    })
+  const shell = async (c: Context<AppEnv>) =>
+    await serveAsset(c, INDEX, "no-store");
+  app.get("/", shell);
+  app.get("/messages/:token", shell);
+
+  app.get(
+    "/assets/:file",
+    async (c) =>
+      await serveAsset(c, `/app/assets/${c.req.param("file")}`, IMMUTABLE)
   );
-
-  app.get("/", async (c) =>
-    c.html(
-      listPage(await listMessages(c.env.DB, LIST_LIMIT), now()),
-      200,
-      HEADERS
-    )
+  app.get(
+    "/favicon.svg",
+    async (c) => await serveAsset(c, "/app/favicon.svg", "no-store")
   );
 
   app.get("/data", async (c) =>
-    c.json(
-      refreshJson(listRows(await listMessages(c.env.DB, LIST_LIMIT)), now()),
-      200,
-      HEADERS
-    )
+    c.json(await listData(c.env.DB, now()), 200, HEADERS)
   );
-
-  app.get("/messages/:token", async (c) => {
-    const detail = await findDetail(c.env.DB, c.req.param("token"));
-    return detail
-      ? c.html(detailPage(detail, now()), 200, HEADERS)
-      : c.html(page("Not found", html`<h1>Not found</h1>`), 404, HEADERS);
-  });
 
   app.get("/messages/:token/data", async (c) => {
     const detail = await findDetail(c.env.DB, c.req.param("token"));
     return detail
-      ? c.json(refreshJson(eventRows(detail), now()), 200, HEADERS)
+      ? c.json(detailData(detail, now()), 200, HEADERS)
       : c.json({ error: "not found" }, 404, HEADERS);
   });
 

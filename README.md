@@ -15,7 +15,9 @@ This repository is the public part of a private agent harness. It carries the pr
   - `POST /api/messages` (bearer `API_TOKEN`, the write token for the plugin) takes `{ "draftId", "subject", "recipient", "links": [https URLs] }` and returns `{ token, imageUrl, links: [{ url, redirectUrl }] }`. It is idempotent per `draftId` (the draft's `headerMessageId`): calling it again updates the subject and recipient, reuses the tokens of known URLs and adds tokens for new ones. It answers 201 the first time and 200 after that.
   - `POST /api/messages/<token>/sent` (bearer `API_TOKEN`) takes `{ "sentAt" }` and records the delivery time once. A reported time before registration, or more than 5 minutes ahead of the Worker's clock, is replaced by the Worker's clock.
   - `GET /api/messages` and `GET /api/messages/<token>` (bearer `API_READ_TOKEN`, the read-only token for the owner's agent) are read-only summaries and per-email links and events, for the owner's agent. The list shows emails that were sent or have events.
-  - `/app` is the dashboard: a list of emails and a per-email timeline. Cloudflare Access protects it. The Worker verifies the `Cf-Access-Jwt-Assertion` header against the team's keys, issuer and audience, and requires `exp`. If `ALLOWED_EMAILS` is set, the token's email must be one of them. An unknown key id triggers a refetch of the keys, for key rotation, at most once a minute, so made-up key ids sent to `/i/` and `/l/` cannot make the Worker fetch keys on every hit.
+  - `/app` is the dashboard: a list of emails, and a page per email with its totals (opens split into probable human and on-open proxy, clicks per link, first and last open) above the full timeline. Both refresh every 15s while the tab is visible. Cloudflare Access protects it. The Worker verifies the `Cf-Access-Jwt-Assertion` header against the team's keys, issuer and audience, and requires `exp`. If `ALLOWED_EMAILS` is set, the token's email must be one of them. An unknown key id triggers a refetch of the keys, for key rotation, at most once a minute, so made-up key ids sent to `/i/` and `/l/` cannot make the Worker fetch keys on every hit.
+  - The dashboard is a React app in `web/` (Vite, Tailwind), built into `web/dist/app` and bound as Workers Static Assets (`ASSETS`). `run_worker_first` sends every request, assets included, through the Worker, so the page, its script, styles and fonts are only served after the Access check. The app reads JSON from `/app/data` and `/app/messages/<token>/data` (shapes and the counting rule: `src/dashboard-data.ts`). All of it is served with a strict CSP: same-origin script, styles, fonts and images only, no inline script, no third-party origins.
+  - The app uses the LittleBit Bauhaus design system ([yuriyward/bauhaus-design-system](https://github.com/yuriyward/bauhaus-design-system)). The copied files are listed with their source in `.ward/design-system-copies.tsv`, and the design-system commit they match is in `.ward/design-system-base`. They are left exactly as copied and are excluded from lint and format.
   - There are no CORS headers. `/api` is for the plugin (Node `https`) and agents, not for browsers.
 - Every event is kept raw and classed `human` (probable human), `proxy` (proxy or prefetch), `scanner`, `self` or `unknown`, with the reason stored (`src/classify.ts`):
   - **self**: an IP in `SELF_IPS`, or a valid Access token of the owner (header or `CF_Authorization` cookie, verified like `/app`). A cookie that is merely present, or a Mailspring user agent, does not count.
@@ -58,7 +60,7 @@ bun run check
 
    Optionally list your own IPs in `SELF_IPS` so your hits are classed self, and your Access email in `ALLOWED_EMAILS`.
 
-5. **Deploy:** `bun run deploy`.
+5. **Deploy:** `bun run deploy` (wrangler builds the dashboard app first, `bun run build:web`).
 
 6. **Install the Mailspring plugin:**
 
@@ -68,7 +70,7 @@ bun run check
 
    In Mailspring choose _Developer → Install a Plugin…_ and select the `mailspring-plugin` folder (or link it into Mailspring's `packages` directory). Open _Preferences → Mail Tracker_, enter the Worker URL (`https://track.example.com`) and the API token, and keep _Track opens and clicks_ on. Turn off Mailspring Pro's own read receipts and link tracking so a message is not tracked twice.
 
-To run the Worker locally: `bun x wrangler d1 migrations apply mail-tracker --local`, put `API_TOKEN=...` and `API_READ_TOKEN=...` in `.dev.vars` (ignored by git), then `bun run dev`.
+To run the Worker locally: `bun x wrangler d1 migrations apply mail-tracker --local`, put `API_TOKEN=...` and `API_READ_TOKEN=...` in `.dev.vars` (ignored by git), then `bun run dev`. Locally there is no Access in front, so `/app` answers 401 unless you send a valid assertion. `bun run build:web` rebuilds the app, and `bun run check` builds it before the tests that inspect the build.
 
 ## Limits
 

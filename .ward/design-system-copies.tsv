@@ -1,0 +1,11 @@
+source	target	disposition	reason
+web/src/index.css	web/src/index.css	copied	
+web/src/shadcn-tailwind.css	web/src/shadcn-tailwind.css	copied	
+web/src/components/ui/alert.tsx	web/src/components/ui/alert.tsx	copied	
+web/src/components/ui/badge.tsx	web/src/components/ui/badge.tsx	copied	
+web/src/components/ui/empty.tsx	web/src/components/ui/empty.tsx	copied	
+web/src/components/ui/skeleton.tsx	web/src/components/ui/skeleton.tsx	copied	
+web/src/components/ui/table.tsx	web/src/components/ui/table.tsx	copied	
+web/src/components/patterns/figures.tsx	web/src/components/patterns/figures.tsx	copied	
+web/src/components/patterns/key-value-list.tsx	web/src/components/patterns/key-value-list.tsx	copied	
+web/public/favicon.svg	web/public/favicon.svg	copied	

@@ -15,8 +15,15 @@ export interface Db {
   batch: (statements: Statement[]) => Promise<object[]>;
 }
 
+/** The subset of Cloudflare's Fetcher the Workers Assets binding needs here. */
+export interface Assets {
+  fetch: (request: Request) => Promise<Response>;
+}
+
 export interface Bindings {
   DB: Db;
+  /** The built dashboard app (web/dist), bound in wrangler.toml; the Worker serves it after Access. */
+  ASSETS?: Assets;
   /** Bearer token for writing to /api (the plugin): `wrangler secret put API_TOKEN`. */
   API_TOKEN?: string;
   /** Bearer token for reading /api (the owner's agent): `wrangler secret put API_READ_TOKEN`. */

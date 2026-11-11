@@ -18,6 +18,7 @@
     "src",
     "mailspring-plugin/src",
     "mailspring-plugin/__tests__",
-    "*.ts"
+    "*.ts",
+    "web/vite.config.ts"
   ]
 }

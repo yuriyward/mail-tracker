@@ -8,5 +8,12 @@ export default defineConfig({
     "exports/**",
     "knowledge/INDEX.md",
     "knowledge/index.jsonl",
+    // Design-system copies stay byte-identical to their source (.ward/design-system-copies.tsv).
+    "web/dist/**",
+    "web/src/components/ui/**",
+    "web/src/components/patterns/**",
+    "web/src/index.css",
+    "web/src/shadcn-tailwind.css",
+    "web/public/favicon.svg",
   ],
 });
