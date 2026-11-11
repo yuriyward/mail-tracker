@@ -34,7 +34,7 @@ Owner design, approved 2026-11-11. This amends ADR-0002 for agent drafts: they g
 
 - Links the owner adds outside Mailspring stay untracked.
 - With several recipients, a send from outside Mailspring delivers one shared copy: opens and clicks are not split by recipient. The owner sends those through Mailspring or an agent.
-- The owner's Sent copy keeps the image and the redirects, wherever he sends from. If he opens it after sending, that open counts unless his IP is in `SELF_IPS` or the hit carries his Access token.
+- Sent from Fastmail web or the phone, the owner's Sent copy keeps the image and the redirects. If he opens it after sending, that open counts unless his IP is in `SELF_IPS` or the hit carries his Access token. No Worker change: a hit on the Sent copy is indistinguishable from the recipient's. Sent from Mailspring, the Sent copy is clean (note below).
 - Classification uses the registration time as the send time until `sent_at` is known, so the "seconds after send" rules (early opens and clicks) cannot fire for an email sent outside Mailspring before `sync-sent` runs.
 
 ## Alternatives
@@ -48,6 +48,10 @@ Owner design, approved 2026-11-11. This amends ADR-0002 for agent drafts: they g
 | Apply the preview rule to every unsent message | A plugin email whose delivery notice is late or lost would lose real opens |
 | `compose` or `sync-sent` creating drafts or reading the Sent folder | Would put mail credentials and mailbox access in this repository; the owner's agent already has mail tools (N1, ADR-0001) |
 | Match sent copies by subject and recipients | Ambiguous for repeated subjects; the image token is exact |
+
+## Note 2026-11-11: clean Sent copy from Mailspring
+
+Owner, 2026-11-11: reopening his own Sent mail must not count as the recipient opening it. When the plugin will split the bodies, its `needsPerRecipientBodies` also cleans the draft it is given. Mailspring passes its own clone (`SendDraftTask.forSending`) and reads the `self` body from that clone straight after. The cleaning removes our image outside quoted text and maps every redirect in the registration's `carried` map back to its URL. The per-recipient (or shared Graph) hook then works from the clean body and puts each recipient's tokens back. Nothing is cleaned when the registration no longer fits, since the draft then goes out as the agent wrote it. Limits: if Mailspring's own tracking answers `needsPerRecipientBodies` first, ours is not asked and the Sent copy keeps the agent's tracking. `sync-sent` cannot match a clean Sent copy; the plugin's delivery notice marks those emails sent. Tested in `mailspring-plugin/__tests__/pretracked.test.ts` through the stand-in caller, which now clones the draft like Mailspring.
 
 ## Premises
 

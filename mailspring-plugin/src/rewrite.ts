@@ -13,6 +13,17 @@ const ANY_QUOTE = `${QUOTE}, blockquote`;
 
 const PIXEL_TOKEN = /^\/i\/(?<token>[\w-]{22})(?:\.png|\.gif)?$/u;
 
+/** The token of one of our tracking images outside quoted text, or null. */
+const ownPixelToken = (img: Element, origin: string): string | null => {
+  const src = img.getAttribute("src")?.trim() ?? "";
+  const url = URL.canParse(src) ? new URL(src) : null;
+  const token =
+    url?.origin === origin
+      ? PIXEL_TOKEN.exec(url.pathname)?.groups?.token
+      : undefined;
+  return token !== undefined && img.closest(ANY_QUOTE) === null ? token : null;
+};
+
 /**
  * The image tokens of our tracking images in the HTML, outside quoted text (an image in
  * quoted text belongs to an earlier email). Used to spot a draft an agent composed with
@@ -20,15 +31,8 @@ const PIXEL_TOKEN = /^\/i\/(?<token>[\w-]{22})(?:\.png|\.gif)?$/u;
  */
 export const ownPixelTokens = (root: ParentNode, origin: string): string[] =>
   [...root.querySelectorAll("img[src]")].flatMap((img) => {
-    const src = img.getAttribute("src")?.trim() ?? "";
-    const url = URL.canParse(src) ? new URL(src) : null;
-    const token =
-      url?.origin === origin
-        ? PIXEL_TOKEN.exec(url.pathname)?.groups?.token
-        : undefined;
-    return token !== undefined && img.closest(ANY_QUOTE) === null
-      ? [token]
-      : [];
+    const token = ownPixelToken(img, origin);
+    return token === null ? [] : [token];
   });
 
 /** The draft's own tracking image token (an agent's composed draft), or null. */
@@ -122,6 +126,32 @@ const destination = (
   return Object.hasOwn(carried, href)
     ? (carried[href] ?? null)
     : normalised(anchor);
+};
+
+/**
+ * Takes this email's own tracking back out of an agent's composed draft (ADR-0004): its
+ * images outside quoted text go, and each redirect it carried, wherever it is, points at
+ * its URL again. Only redirects in `carried` (from the Worker at registration) are mapped,
+ * never guessed; other links, and images in quoted text (an earlier email's), are kept.
+ * Used for the Sent copy, so opening it later counts nothing.
+ */
+export const untrack = (
+  root: ParentNode,
+  origin: string,
+  carried: Readonly<Record<string, string>>
+): void => {
+  for (const img of root.querySelectorAll("img[src]")) {
+    if (ownPixelToken(img, origin) !== null) {
+      img.remove();
+    }
+  }
+  for (const anchor of root.querySelectorAll("a[href]")) {
+    const href = anchor.getAttribute("href")?.trim() ?? "";
+    const url = Object.hasOwn(carried, href) ? carried[href] : undefined;
+    if (url !== undefined) {
+      anchor.setAttribute("href", url);
+    }
+  }
 };
 
 /**

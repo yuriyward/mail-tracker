@@ -90,6 +90,17 @@ const expectOwnTokens = (
   return own;
 };
 
+/**
+ * Checks the Sent copy: no tracking image and the agent's redirects back to their URLs, so
+ * opening it later records nothing; the rest of the body is the agent's.
+ */
+const expectCleanSentCopy = (html: string): void => {
+  expect(images(html)).toEqual([]);
+  expect(hrefs(html)).toEqual([DECK, PRICING]);
+  expect(html).not.toContain(ORIGIN);
+  expect(html).toContain("Hi Alex,");
+};
+
 describe("a draft composed with tracking by an agent, sent from Mailspring", () => {
   test("several recipients: each body gets that recipient's own tokens in place of the shared ones, one image each", async () => {
     const composed = await composeWith(f.h, {
@@ -125,8 +136,7 @@ describe("a draft composed with tracking by an agent, sent from Mailspring", () 
     );
     // No two recipients share an image or a redirect.
     expect(new Set(used).size).toBe(RECIPIENTS.length * 3);
-    // The Sent copy is the draft as it was, with the agent's shared image (see README).
-    expect(bodies.self).toBe(composed.html);
+    expectCleanSentCopy(bodies.self ?? "");
     expect(f.logs).toEqual([]);
 
     // Marked sent on delivery, as today, on the agent's message.
@@ -150,13 +160,66 @@ describe("a draft composed with tracking by an agent, sent from Mailspring", () 
       { address: "alex@example.com", current: 1 },
     ]);
     const task = f.send(message);
+    expect(Object.keys(task.perRecipientBodies ?? {})).toEqual([
+      "self",
+      "alex@example.com",
+    ]);
     const html = task.perRecipientBodies?.["alex@example.com"] ?? "";
     expect(images(html)).toEqual([composed.receipt.imageUrl]);
     expect(hrefs(html)).toEqual([
       redirectOf(composed, DECK),
       redirectOf(composed, PRICING),
     ]);
+    expectCleanSentCopy(task.perRecipientBodies?.self ?? "");
+    // Only Mailspring's clone was cleaned; the draft itself keeps the agent's tracking.
+    expect(message.body).toBe(composed.html);
     expect(f.logs).toEqual([]);
+  });
+
+  test("Graph account: the Sent copy is clean, the one shared body sent to all is tracked", async () => {
+    f.state.graph = true;
+    const composed = await composeWith(f.h, { cc: RECIPIENTS.slice(1, 2) });
+    const message = agentDraft(composed, RECIPIENTS.slice(0, 2));
+    await f.compose(message);
+    const entry = lookup(f.config, DRAFT_ID);
+    expect(entry?.shared).toBe(true);
+    const [set] = Object.values(entry?.recipients ?? {});
+    const task = f.send(message);
+    expect(Object.keys(task.perRecipientBodies ?? {})).toEqual(["self"]);
+    expectCleanSentCopy(task.perRecipientBodies?.self ?? "");
+    expect(images(task.body)).toEqual([set?.imageUrl ?? ""]);
+    expect(hrefs(task.body)).toEqual([
+      set?.links[DECK] ?? "",
+      set?.links[PRICING] ?? "",
+    ]);
+    expect(set?.imageUrl).toStartWith(ORIGIN);
+    expect(f.logs).toEqual([]);
+  });
+
+  test("the Sent copy keeps an earlier email's image in quoted text and links the agent did not track", async () => {
+    const composed = await composeWith(f.h);
+    const message = agentDraft(composed, ["alex@example.com"]);
+    const quoted = `<blockquote><img src="${OLD_PIXEL}.png"><a href="${ORIGIN}/l/earlier">e</a></blockquote>`;
+    message.body = `${composed.html}${quoted}`;
+    await f.compose(message);
+    const self = f.send(message).perRecipientBodies?.self ?? "";
+    expect(images(self)).toEqual([`${OLD_PIXEL}.png`]);
+    expect(hrefs(self)).toEqual([DECK, PRICING, `${ORIGIN}/l/earlier`]);
+  });
+
+  test("tokens that no longer fit: nothing is split or cleaned, the draft goes out as the agent wrote it", async () => {
+    const composed = await composeWith(f.h);
+    const message = agentDraft(composed, ["alex@example.com"]);
+    await f.compose(message);
+    const readdressed = draft({
+      bcc: [],
+      body: composed.html,
+      cc: [],
+      to: [{ email: "sam@example.net" }],
+    });
+    const task = f.send(readdressed);
+    expect(task.perRecipientBodies).toBeNull();
+    expect(task.body).toBe(composed.html);
   });
 
   test("a link the owner adds in Mailspring is registered and tracked like the agent's", async () => {

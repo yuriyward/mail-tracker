@@ -9,7 +9,7 @@ import { normaliseAddress } from "../../src/recipients";
 import { autolink } from "./autolink";
 import { lookup } from "./registry";
 import type { ConfigStore, Registration, TokenSet } from "./registry";
-import { applyTokenSet } from "./rewrite";
+import { applyTokenSet, untrack } from "./rewrite";
 import { skipReason, trackerOrigin } from "./settings";
 import type { Settings } from "./settings";
 import { parseSnapshot, recipientAddresses, snapshot } from "./snapshot";
@@ -112,6 +112,21 @@ const choose = (
     : { untracked: "a recipient without registered tokens goes untracked" };
 };
 
+/** Removes the carried tracking from the body Mailspring is about to file as the Sent copy. */
+const cleanSentCopy = (
+  draft: Message,
+  origin: string,
+  carried: Readonly<Record<string, string>>
+): void => {
+  // An inert document, as Mailspring uses for sending, so images in the body are not fetched.
+  const root = document.implementation
+    .createHTMLDocument("")
+    .createElement("root");
+  root.innerHTML = draft.body ?? "";
+  untrack(root, origin, carried);
+  draft.body = root.innerHTML;
+};
+
 /**
  * The composer extension. Mailspring calls both hooks synchronously while it builds the
  * SendDraftTask (app/src/flux/tasks/send-draft-task.ts) and serialises the body straight
@@ -152,14 +167,28 @@ export const createExtension = (
      * Asks for one body per recipient whenever this draft will be tracked; Mailspring then
      * files its untransformed `self` body as the Sent copy and runs the hook below once per
      * recipient, each with that recipient's tokens. Graph accounts get one shared body.
+     *
+     * An agent's composed draft (ADR-0004) already carries its image and redirects, so the
+     * untransformed body is not clean. Mailspring calls this on its own clone of the draft
+     * (SendDraftTask.forSending) and reads `self` from that clone's body straight after, so
+     * the carried tracking is taken out here: the Sent copy gets no image and the original
+     * URLs, and the hook below puts each recipient's own tokens back from the clean body.
      */
     static needsPerRecipientBodies(draft: Message): boolean {
       try {
         const tracked = active(draft, deps);
-        return (
+        const separate =
           tracked !== null &&
-          mismatch(draft, tracked.entry, deps.sendsViaGraph(draft)) === null
-        );
+          mismatch(draft, tracked.entry, deps.sendsViaGraph(draft)) === null;
+        if (separate && tracked.entry.carried !== null) {
+          try {
+            cleanSentCopy(draft, tracked.origin, tracked.entry.carried);
+          } catch (error) {
+            // The recipients' bodies are still built; only the Sent copy keeps the tracking.
+            deps.log(`cleaning the Sent copy failed: ${String(error)}`);
+          }
+        }
+        return separate;
       } catch (error) {
         deps.log(`needsPerRecipientBodies failed: ${String(error)}`);
         return false;

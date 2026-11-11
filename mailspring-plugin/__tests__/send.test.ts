@@ -398,13 +398,13 @@ describe("which tokens each body gets", () => {
 
   test("an exception inside the hook is caught and the mail still goes out", async () => {
     await f.compose();
-    const broken = draft();
-    Object.defineProperty(broken, "headerMessageId", {
+    // Throws only once the hooks run, after Mailspring has cloned the draft.
+    Object.defineProperty(f.state, "settings", {
       get: () => {
         throw new Error("simulated failure");
       },
     });
-    expect(() => forSending([f.main.extension], broken)).not.toThrow();
+    expect(() => forSending([f.main.extension], draft())).not.toThrow();
     expect(f.logs.some((line) => line.includes("simulated failure"))).toBe(
       true
     );

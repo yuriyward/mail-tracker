@@ -63,9 +63,11 @@ const applyExtensionTransforms = (
 /** SendDraftTask.forSending's body handling; `sendsViaGraph` mirrors Graph accounts. */
 export const forSending = (
   extensions: StandInExtension[],
-  draft: Message,
+  original: Message,
   sendsViaGraph = false
 ): SentTask => {
+  // `task.draft = d.clone()`: the hooks see a copy, never the draft in the composer.
+  const draft = structuredClone(original);
   const returned: unknown[] = [];
   const separateBodies = extensions.some(
     (ext) => ext.needsPerRecipientBodies?.(draft) === true
