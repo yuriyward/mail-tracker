@@ -21,7 +21,8 @@ describe("Summary", () => {
     expect(html.match(/<p /gu)).toHaveLength(1);
     expect(text(html)).toMatch(/^ann@example\.com·sent .+·opened .+–.+$/u);
     expect(html.match(/<time /gu)).toHaveLength(3);
-    expect(html.match(/ title="/gu)).toHaveLength(3);
+    // Full dates are in design-system tooltips, rendered on hover, never a browser title.
+    expect(html).not.toContain(" title=");
   });
 
   test("one open shows one time; unsent and unopened say so", () => {

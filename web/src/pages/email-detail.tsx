@@ -1,6 +1,7 @@
 import { useReactTable } from "@tanstack/react-table";
 import type { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";
 import { useState } from "react";
+import type { ReactNode } from "react";
 
 import { DataTableFacetedFilter } from "@/components/patterns/data-table-filters";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import type {
   TimelineEvent,
   Totals,
 } from "../../../src/dashboard-data";
+import { Hint } from "../hint";
 import { LoadFailed, StaleAlert, Updated, linkClass } from "../layout";
 import { When, subjectOf } from "../lib/format";
 import { usePoll } from "../lib/poll";
@@ -78,11 +80,10 @@ const LinkClicks = ({ links }: { links: Totals["clicks"]["links"] }) => (
     <TableBody>
       {links.map((link) => (
         <TableRow key={link.token}>
-          <TableCell
-            className="max-w-[60ch] truncate font-mono text-sm"
-            title={link.url}
-          >
-            {link.url}
+          <TableCell className="font-mono text-sm">
+            <Hint label={link.url}>
+              <span className="block max-w-[60ch] truncate">{link.url}</span>
+            </Hint>
           </TableCell>
           <TableCell className="text-right">{link.clicks}</TableCell>
           <TableCell className="text-muted-foreground text-right">
@@ -166,7 +167,27 @@ const CLASS_OPTIONS = EVENT_CLASSES.map((value) => ({
   value,
 }));
 
-const TRUNCATE = "block max-w-[40ch] truncate";
+/** A cell cut to 40 characters, its whole text in a tooltip; none when `label` is empty. */
+const Truncated = ({
+  children,
+  className = "",
+  label,
+}: {
+  children: ReactNode;
+  className?: string;
+  label: string | null;
+}) => {
+  const cell = (
+    <span className={`block max-w-[40ch] truncate ${className}`}>
+      {children}
+    </span>
+  );
+  return label === null || label === "" ? (
+    cell
+  ) : (
+    <Hint label={label}>{cell}</Hint>
+  );
+};
 
 const COLUMNS: ColumnDef<TimelineEvent>[] = [
   {
@@ -180,12 +201,12 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
     cell: ({ row }) => {
       const { kind, url } = row.original;
       return (
-        <span className={TRUNCATE} title={url ?? undefined}>
+        <Truncated label={url}>
           {kind === "open" ? "Open" : "Click"}
           {url !== null && (
             <span className="ml-2 font-mono text-sm">{url}</span>
           )}
-        </span>
+        </Truncated>
       );
     },
     header: "Event",
@@ -199,9 +220,9 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
         </Badge>
         {row.original.duplicate && <Badge variant="ghost">repeat</Badge>}
         {row.original.hint !== null && (
-          <Badge title={row.original.hint} variant="secondary">
-            possibly forwarded
-          </Badge>
+          <Hint label={row.original.hint}>
+            <Badge variant="secondary">possibly forwarded</Badge>
+          </Hint>
         )}
       </span>
     ),
@@ -211,11 +232,7 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
     cell: ({ row }) => {
       const { recipient } = row.original;
       const label = recipient === null ? "—" : recipientLabel(recipient);
-      return (
-        <span className={TRUNCATE} title={label}>
-          {label}
-        </span>
-      );
+      return <Truncated label={label}>{label}</Truncated>;
     },
     header: "Recipient",
     id: "recipient",
@@ -225,11 +242,7 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
       const reason = [row.original.reason, row.original.hint]
         .filter((part) => part !== null)
         .join("; ");
-      return (
-        <span className={TRUNCATE} title={reason}>
-          {reason}
-        </span>
-      );
+      return <Truncated label={reason}>{reason}</Truncated>;
     },
     header: "Reason",
     id: "reason",
@@ -238,9 +251,9 @@ const COLUMNS: ColumnDef<TimelineEvent>[] = [
     cell: ({ row }) => {
       const client = clientOf(row.original);
       return (
-        <span className={`${TRUNCATE} text-muted-foreground`} title={client}>
+        <Truncated className="text-muted-foreground" label={client}>
           {client}
-        </span>
+        </Truncated>
       );
     },
     header: "Client",

@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { fullDate, shortDate } from "../src/lib/dates";
+import {
+  dateTooltip,
+  fullDate,
+  relativeTime,
+  shortDate,
+} from "../src/lib/dates";
 
 /** Wednesday 11 November 2026, 14:30 in Berlin (UTC+1). */
 const NOW = Date.parse("2026-11-11T14:30:00+01:00");
@@ -75,11 +80,77 @@ describe("shortDate", () => {
 });
 
 describe("fullDate", () => {
-  test("names the weekday, date, time and zone", () => {
+  test("the date and time in the reader's locale and zone", () => {
     expect(fullDate(Date.parse("2026-11-04T12:54:00+01:00"), BERLIN)).toBe(
-      "Wednesday, November 4, 2026 at 12:54:00 PM GMT+1"
+      "Nov 4, 2026, 12:54 PM"
     );
+    expect(
+      fullDate(Date.parse("2026-11-04T12:54:00+01:00"), {
+        locale: "en-GB",
+        timeZone: "Asia/Tokyo",
+      })
+    ).toBe("4 Nov 2026, 20:54");
   });
+});
+
+describe("relativeTime", () => {
+  const ago = (iso: string) => relativeTime(Date.parse(iso), NOW, BERLIN);
+  const MIN = 60_000;
+  const HOUR = 60 * MIN;
+  const back = (ms: number) => relativeTime(NOW - ms, NOW, BERLIN);
+
+  test("under a minute either way is just now", () => {
+    expect(back(0)).toBe("just now");
+    expect(back(59_999)).toBe("just now");
+    expect(back(-59_999)).toBe("just now");
+  });
+
+  test("minutes up to 59, hours up to 23", () => {
+    expect(back(MIN)).toBe("1 minute ago");
+    expect(back(59 * MIN + 59_999)).toBe("59 minutes ago");
+    expect(back(HOUR)).toBe("1 hour ago");
+    expect(back(23 * HOUR + 59 * MIN)).toBe("23 hours ago");
+    // 23 h ago is the previous calendar day, still counted in hours.
+    expect(ago("2026-11-10T15:30:00+01:00")).toBe("23 hours ago");
+  });
+
+  test("from a day on, calendar days in the zone: yesterday up to 6 days", () => {
+    expect(ago("2026-11-10T14:30:00+01:00")).toBe("yesterday");
+    expect(ago("2026-11-10T00:00:00+01:00")).toBe("yesterday");
+    expect(ago("2026-11-09T23:59:00+01:00")).toBe("2 days ago");
+    expect(ago("2026-11-05T00:00:00+01:00")).toBe("6 days ago");
+  });
+
+  test("weeks from 7 days, months from 30", () => {
+    expect(ago("2026-11-04T23:59:00+01:00")).toBe("1 week ago");
+    expect(ago("2026-10-29T12:00:00+01:00")).toBe("1 week ago");
+    expect(ago("2026-10-28T12:00:00+01:00")).toBe("2 weeks ago");
+    expect(ago("2026-10-13T12:00:00+02:00")).toBe("4 weeks ago");
+    expect(ago("2026-10-12T12:00:00+02:00")).toBe("1 month ago");
+    expect(ago("2026-05-11T12:00:00+02:00")).toBe("6 months ago");
+    expect(ago("2025-11-11T12:00:00+01:00")).toBe("12 months ago");
+  });
+
+  test("future times read in …", () => {
+    expect(back(-MIN)).toBe("in 1 minute");
+    expect(back(-3 * HOUR)).toBe("in 3 hours");
+    expect(ago("2026-11-12T14:30:00+01:00")).toBe("tomorrow");
+    expect(ago("2026-11-14T10:00:00+01:00")).toBe("in 3 days");
+    expect(ago("2026-11-25T10:00:00+01:00")).toBe("in 2 weeks");
+    expect(ago("2027-01-11T10:00:00+01:00")).toBe("in 2 months");
+  });
+
+  test("the relative part follows the reader's locale", () => {
+    const de = { locale: "de-DE", timeZone: "Europe/Berlin" };
+    expect(relativeTime(NOW - 3 * HOUR, NOW, de)).toBe("vor 3 Stunden");
+    expect(relativeTime(NOW - 24 * HOUR, NOW, de)).toBe("gestern");
+  });
+});
+
+test("dateTooltip joins the full date and how long ago", () => {
+  expect(
+    dateTooltip(Date.parse("2026-11-11T11:30:00+01:00"), NOW, BERLIN)
+  ).toBe("Nov 11, 2026, 11:30 AM · 3 hours ago");
 });
 
 test("a locale with its own digits still finds the day", () => {

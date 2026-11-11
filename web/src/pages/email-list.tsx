@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { listDataSchema } from "../../../src/dashboard-data";
 import type { ListMessage } from "../../../src/dashboard-data";
+import { Hint } from "../hint";
 import { LoadFailed, StaleAlert, Updated, linkClass } from "../layout";
 import { When, subjectOf } from "../lib/format";
 import { usePoll } from "../lib/poll";
@@ -31,13 +32,14 @@ const COLUMNS: ColumnDef<ListMessage>[] = [
     cell: ({ row }) => {
       const subject = subjectOf(row.original.subject);
       return (
-        <a
-          className={`${linkClass} block max-w-[36ch] truncate`}
-          href={`/app/messages/${row.original.token}`}
-          title={subject}
-        >
-          {subject}
-        </a>
+        <Hint label={subject}>
+          <a
+            className={`${linkClass} block max-w-[36ch] truncate`}
+            href={`/app/messages/${row.original.token}`}
+          >
+            {subject}
+          </a>
+        </Hint>
       );
     },
     header: sortHeader<ListMessage>("Subject"),
@@ -46,12 +48,11 @@ const COLUMNS: ColumnDef<ListMessage>[] = [
   {
     ...LIST_COLUMNS.recipient,
     cell: ({ row }) => (
-      <span
-        className="block max-w-[28ch] truncate"
-        title={row.original.recipient}
-      >
-        {row.original.recipient}
-      </span>
+      <Hint label={row.original.recipient}>
+        <span className="block max-w-[28ch] truncate">
+          {row.original.recipient}
+        </span>
+      </Hint>
     ),
     header: sortHeader<ListMessage>("Recipient"),
   },

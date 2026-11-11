@@ -1,24 +1,27 @@
-import { fullDate, shortDate } from "./dates";
+import { Hint } from "../hint";
+import { dateTooltip, shortDate } from "./dates";
 
 const clock = new Intl.DateTimeFormat(undefined, { timeStyle: "medium" });
 
 /**
  * A moment as a short date in the reader's time zone (see shortDate), the full date and
- * time on hover; a muted word when there is none. Each refresh re-renders it, so "today"
- * follows the clock.
+ * time and how long ago on hover (see dateTooltip); a muted word when there is none. Each
+ * refresh re-renders it, so "today" and "3 minutes ago" follow the clock.
  */
 export const When = ({ ms, none }: { ms: number | null; none: string }) => {
   if (ms === null) {
     return <span className="text-muted-foreground">{none}</span>;
   }
+  const now = Date.now();
   return (
-    <time
-      className="whitespace-nowrap tabular-nums"
-      dateTime={new Date(ms).toISOString()}
-      title={fullDate(ms)}
-    >
-      {shortDate(ms, Date.now())}
-    </time>
+    <Hint label={dateTooltip(ms, now)}>
+      <time
+        className="whitespace-nowrap tabular-nums"
+        dateTime={new Date(ms).toISOString()}
+      >
+        {shortDate(ms, now)}
+      </time>
+    </Hint>
   );
 };
 

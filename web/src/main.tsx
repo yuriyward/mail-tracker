@@ -1,6 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 import "./index.css";
 import { Layout } from "./layout";
 import { EmailDetail } from "./pages/email-detail";
@@ -24,6 +26,8 @@ if (!root) {
 }
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <TooltipProvider>
+      <App />
+    </TooltipProvider>
   </StrictMode>
 );
