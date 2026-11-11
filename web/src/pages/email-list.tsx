@@ -1,3 +1,11 @@
+import { useReactTable } from "@tanstack/react-table";
+import type { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";
+import { useState } from "react";
+
+import {
+  DataTableFacetedFilter,
+  DataTableSearch,
+} from "@/components/patterns/data-table-filters";
 import {
   Empty,
   EmptyDescription,
@@ -5,49 +13,102 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 import { listDataSchema } from "../../../src/dashboard-data";
 import type { ListMessage } from "../../../src/dashboard-data";
 import { LoadFailed, StaleAlert, Updated, linkClass } from "../layout";
 import { When, subjectOf } from "../lib/format";
 import { usePoll } from "../lib/poll";
+import {
+  LIST_COLUMNS,
+  LIST_SORTING,
+  OPEN_STATES,
+  rowModels,
+} from "../lib/tables";
+import { FilteredTable, sortHeader } from "../table-parts";
 
-const MessageRow = ({ message }: { message: ListMessage }) => {
-  const subject = subjectOf(message.subject);
-  return (
-    <TableRow>
-      <TableCell className="max-w-[36ch] truncate" title={subject}>
-        <a className={linkClass} href={`/app/messages/${message.token}`}>
+const END = { align: "end", cellClassName: "type-meta" } as const;
+
+const COLUMNS: ColumnDef<ListMessage>[] = [
+  {
+    ...LIST_COLUMNS.subject,
+    cell: ({ row }) => {
+      const subject = subjectOf(row.original.subject);
+      return (
+        <a
+          className={`${linkClass} block max-w-[36ch] truncate`}
+          href={`/app/messages/${row.original.token}`}
+          title={subject}
+        >
           {subject}
         </a>
-      </TableCell>
-      <TableCell className="max-w-[28ch] truncate">
-        {message.recipient}
-      </TableCell>
-      <TableCell>
-        <When ms={message.sentAt} none="Not marked sent" />
-      </TableCell>
-      <TableCell>
-        <When ms={message.firstOpen} none="Not opened" />
-      </TableCell>
-      <TableCell>
-        <When ms={message.lastOpen} none="—" />
-      </TableCell>
-      <TableCell className="text-right">{message.opens}</TableCell>
-      <TableCell className="text-right">{message.clicks}</TableCell>
-    </TableRow>
-  );
-};
+      );
+    },
+    header: sortHeader<ListMessage>("Subject"),
+    meta: { pin: "0", pinEdge: true },
+  },
+  {
+    ...LIST_COLUMNS.recipient,
+    cell: ({ row }) => (
+      <span
+        className="block max-w-[28ch] truncate"
+        title={row.original.recipient}
+      >
+        {row.original.recipient}
+      </span>
+    ),
+    header: sortHeader<ListMessage>("Recipient"),
+  },
+  {
+    ...LIST_COLUMNS.sent,
+    cell: ({ row }) => <When ms={row.original.sentAt} none="Not sent" />,
+    header: sortHeader<ListMessage>("Sent"),
+    meta: END,
+  },
+  {
+    ...LIST_COLUMNS.firstOpen,
+    cell: ({ row }) => <When ms={row.original.firstOpen} none="—" />,
+    header: sortHeader<ListMessage>("First open"),
+    meta: END,
+  },
+  {
+    ...LIST_COLUMNS.lastOpen,
+    cell: ({ row }) => <When ms={row.original.lastOpen} none="—" />,
+    header: sortHeader<ListMessage>("Last open"),
+    meta: END,
+  },
+  {
+    ...LIST_COLUMNS.opens,
+    header: sortHeader<ListMessage>("Opens"),
+    meta: END,
+  },
+  {
+    ...LIST_COLUMNS.clicks,
+    header: sortHeader<ListMessage>("Clicks"),
+    meta: END,
+  },
+  LIST_COLUMNS.status,
+];
+
+const MODELS = rowModels<ListMessage>();
 
 const Messages = ({ messages }: { messages: ListMessage[] }) => {
+  const [sorting, setSorting] = useState(LIST_SORTING);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [globalFilter, setGlobalFilter] = useState("");
+  const table = useReactTable({
+    ...MODELS,
+    columns: COLUMNS,
+    data: messages,
+    getRowId: (m) => m.token,
+    globalFilterFn: "includesString",
+    initialState: { columnVisibility: { status: false } },
+    onColumnFiltersChange: setColumnFilters,
+    onGlobalFilterChange: setGlobalFilter,
+    onSortingChange: setSorting,
+    state: { columnFilters, globalFilter, sorting },
+  });
+  const status = table.getColumn("status");
   if (messages.length === 0) {
     return (
       <Empty className="border p-8">
@@ -62,24 +123,29 @@ const Messages = ({ messages }: { messages: ListMessage[] }) => {
     );
   }
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Subject</TableHead>
-          <TableHead>Recipient</TableHead>
-          <TableHead>Sent</TableHead>
-          <TableHead>First open</TableHead>
-          <TableHead>Last open</TableHead>
-          <TableHead className="text-right">Opens</TableHead>
-          <TableHead className="text-right">Clicks</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {messages.map((message) => (
-          <MessageRow key={message.token} message={message} />
-        ))}
-      </TableBody>
-    </Table>
+    <FilteredTable
+      caption="Tracked emails. Column headers sort the rows."
+      noMatch="No emails match"
+      noun={["email", "emails"]}
+      table={table}
+      toolbar={
+        <>
+          <DataTableSearch
+            label="Search emails by subject or recipient"
+            onChange={setGlobalFilter}
+            placeholder="Search subject or recipient"
+            value={globalFilter}
+          />
+          {status && (
+            <DataTableFacetedFilter
+              column={status}
+              options={OPEN_STATES}
+              title="Status"
+            />
+          )}
+        </>
+      }
+    />
   );
 };
 

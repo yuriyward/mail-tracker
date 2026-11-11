@@ -9,3 +9,10 @@ web/src/components/ui/table.tsx	web/src/components/ui/table.tsx	copied
 web/src/components/patterns/figures.tsx	web/src/components/patterns/figures.tsx	copied	
 web/src/components/patterns/key-value-list.tsx	web/src/components/patterns/key-value-list.tsx	copied	
 web/public/favicon.svg	web/public/favicon.svg	copied	
+web/src/components/patterns/data-table.tsx	web/src/components/patterns/data-table.tsx	copied	
+web/src/components/patterns/data-table-filters.tsx	web/src/components/patterns/data-table-filters.tsx	copied	
+web/src/components/ui/button.tsx	web/src/components/ui/button.tsx	copied	
+web/src/components/ui/dropdown-menu.tsx	web/src/components/ui/dropdown-menu.tsx	copied	
+web/src/components/ui/input-group.tsx	web/src/components/ui/input-group.tsx	copied	
+web/src/components/ui/input.tsx	web/src/components/ui/input.tsx	copied	
+web/src/components/ui/textarea.tsx	web/src/components/ui/textarea.tsx	copied	

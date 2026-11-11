@@ -1,16 +1,24 @@
-const dateTime = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
+import { fullDate, shortDate } from "./dates";
+
 const clock = new Intl.DateTimeFormat(undefined, { timeStyle: "medium" });
 
-/** A moment in the reader's time zone, or a muted word when there is none. */
+/**
+ * A moment as a short date in the reader's time zone (see shortDate), the full date and
+ * time on hover; a muted word when there is none. Each refresh re-renders it, so "today"
+ * follows the clock.
+ */
 export const When = ({ ms, none }: { ms: number | null; none: string }) => {
   if (ms === null) {
     return <span className="text-muted-foreground">{none}</span>;
   }
   return (
-    <time dateTime={new Date(ms).toISOString()}>{dateTime.format(ms)}</time>
+    <time
+      className="whitespace-nowrap tabular-nums"
+      dateTime={new Date(ms).toISOString()}
+      title={fullDate(ms)}
+    >
+      {shortDate(ms, Date.now())}
+    </time>
   );
 };
 
