@@ -1,3 +1,10 @@
+import { publishedNetworkLookup } from "./networks";
+import type {
+  NetworkLookup,
+  NetworkVerdict,
+  PublishedNetwork,
+} from "./networks";
+
 export const EVENT_CLASSES = [
   "human",
   "proxy",
@@ -67,12 +74,22 @@ interface Verdict {
   reason: string;
   counted: boolean;
 }
-type Rule = (hit: Hit) => Verdict | null;
+/** `network` is the published list holding the hit's IP, if any. */
+type Rule = (hit: Hit, network: PublishedNetwork | null) => Verdict | null;
 
 const counts = (reason: string): Verdict => ({ counted: true, reason });
 const hidden = (reason: string): Verdict => ({ counted: false, reason });
 
 const seconds = (ms: number): string => `${Math.round(ms / SECOND)}s`;
+
+/** A rule for hits whose published network gives `verdict` for the hit's kind. */
+const fromNetwork =
+  (
+    verdict: NetworkVerdict,
+    make: (network: PublishedNetwork) => Verdict
+  ): Rule =>
+  (h, network) =>
+    network !== null && network[h.kind] === verdict ? make(network) : null;
 
 const SELF_RULES: Rule[] = [
   (h) =>
@@ -88,6 +105,7 @@ const SCANNER_RULES: Rule[] = [
     const match = SCANNER_UA.exec(h.userAgent);
     return match ? hidden(`scanner user agent (${match[0]})`) : null;
   },
+  fromNetwork("scanner", (n) => hidden(`IP in the ${n.name}`)),
   (h) =>
     h.kind === "click" && h.ageMs < EARLY_CLICK_MS
       ? hidden(`clicked ${seconds(h.ageMs)} after send`)
@@ -112,6 +130,10 @@ const PROXY_RULES: Rule[] = [
     const match = ON_OPEN_PROXY_UA.exec(h.userAgent);
     return match ? counts(`on-open image proxy (${match[0]})`) : null;
   },
+  fromNetwork("on-open", (n) =>
+    counts(`on-open image proxy: IP in the ${n.name}`)
+  ),
+  fromNetwork("prefetch", (n) => hidden(`prefetch: IP in the ${n.name}`)),
   (h) =>
     h.kind === "open" && BARE_MOZILLA_UA.test(h.userAgent)
       ? hidden(
@@ -144,11 +166,18 @@ const ORDER: [EventClass, Rule[]][] = [
   ["human", HUMAN_RULES],
 ];
 
-/** The first matching rule wins, in the order self, scanner, proxy, human. */
-export const classify = (hit: Hit): Classification => {
+/**
+ * The first matching rule wins, in the order self, scanner, proxy, human. `networks` finds the
+ * published network list (src/networks.ts) that holds the hit's IP.
+ */
+export const classify = (
+  hit: Hit,
+  networks: NetworkLookup = publishedNetworkLookup
+): Classification => {
+  const network = hit.ip === "" ? null : networks(hit.ip);
   for (const [eventClass, rules] of ORDER) {
     for (const rule of rules) {
-      const verdict = rule(hit);
+      const verdict = rule(hit, network);
       if (verdict !== null) {
         return { class: eventClass, ...verdict };
       }

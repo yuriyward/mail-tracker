@@ -21,8 +21,20 @@ This repository is the public part of a private agent harness. It carries the pr
   - There are no CORS headers. `/api` is for the plugin (Node `https`) and agents, not for browsers.
 - Every event is kept raw and classed `human` (probable human), `proxy` (proxy or prefetch), `scanner`, `self` or `unknown`, with the reason stored (`src/classify.ts`):
   - **self**: an IP in `SELF_IPS`, or a valid Access token of the owner (header or `CF_Authorization` cookie, verified like `/app`). A cookie that is merely present, or a Mailspring user agent, does not count.
-  - **scanner**: HEAD requests, bot user agents, clicks within 10s of sending, clicks from data-centre networks, and the same IP and user agent clicking two links of the email within 3s. Your own clicks are left out of that check.
-  - **proxy**: on-open image proxies (Gmail's `GoogleImageProxy`, Yahoo's), and prefetches (Apple's bare `Mozilla/5.0`, mail-provider networks, opens within 30s of sending).
+  - **scanner**: HEAD requests, bot user agents, hits from a security gateway's published ranges (below), clicks within 10s of sending, clicks from data-centre networks, and the same IP and user agent clicking two links of the email within 3s. Your own clicks are left out of that check.
+  - **proxy**: on-open image proxies (Gmail's `GoogleImageProxy`, Yahoo's, or an open from Google's published service ranges), and prefetches (Apple's bare `Mozilla/5.0`, an open from Apple's Private Relay or Microsoft's Exchange Online ranges, mail-provider networks, opens within 30s of sending).
+  - **Published network ranges** (`src/networks.ts`): the hit's IP is looked up in the vendors' own lists, and the reason names the list that matched, e.g. `prefetch: IP in the Apple iCloud Private Relay egress list`. The first list that holds the IP decides:
+
+    | List | Source | Open | Click |
+    | --- | --- | --- | --- |
+    | Apple iCloud Private Relay egress (Mail Privacy Protection loads images through it) | [egress-ip-ranges.csv](https://mask-api.icloud.com/egress-ip-ranges.csv) ([docs](https://developer.apple.com/support/prepare-your-network-for-icloud-private-relay/)) | prefetch | other rules (people browse in Safari through the same relay) |
+    | Google services, Gmail's image proxy among them | [goog.json](https://www.gstatic.com/ipranges/goog.json) minus [cloud.json](https://www.gstatic.com/ipranges/cloud.json), Google Cloud customers ([docs](https://support.google.com/a/answer/10026322)) | on-open proxy (counted) | scanner |
+    | Microsoft 365 Exchange Online and Exchange Online Protection, where Defender for Office 365 Safe Links runs | [endpoints.office.com](https://endpoints.office.com/endpoints/worldwide?clientrequestid=b10c5ed1-bad1-445f-b386-b919946339a7), service area Exchange ([docs](https://learn.microsoft.com/en-us/microsoft-365/enterprise/urls-and-ip-address-ranges)) | prefetch (Outlook's image proxy is still counted by its user agent) | scanner |
+    | Mimecast | SPF records under `_netblocks.mimecast.com` ([Data Centers & URLs](https://mimecastsupport.zendesk.com/hc/en-us/articles/34000362728979-Administration-Data-Centers-URLs)) | scanner | scanner |
+    | Proofpoint Essentials | [Connection Details](https://help.proofpoint.com/Proofpoint_Essentials/Email_Security/Administrator_Topics/000_gettingstarted/020_connectiondetails), copied into `scripts/refresh-networks.ts` | scanner | scanner |
+
+    The ranges are a committed data file, `src/networks.json`, that `bun run refresh:networks` regenerates from these sources. Review the diff, commit, deploy. A file was chosen over a cron trigger that writes them to D1 or KV because it needs no binding, migration or per-hit query, keeps classification a pure function that tests can pin down, and the lists change slowly. Apple's 285k prefixes collapse to about 14k blocks (450 KB, about 200 KB gzipped in the bundle). The cost is that new ranges only apply after a refresh and deploy.
+
   - **Counting:** opens and clicks in the list count only probable humans and on-open proxies, without duplicates, so an Apple prefetch is never shown as the first open. The timeline shows every event.
   - **Forwarding hint** (`src/forwarding.ts`): within one recipient's tokens, a later probable-human event from a different network, country or kind of device (phone, tablet, computer) than that recipient's first one is marked "possibly forwarded or opened by someone else", with what differed. It is worked out when the data is read and does not change any count. It is a hint, not proof: the same person on mobile data or a second device looks the same. Shared copies to several recipients and emails from before per-recipient tokens get no hint.
 - `mailspring-plugin/` tracks at send time, in two steps, because Mailspring calls `applyTransformsForSending` synchronously and serialises the body right after (`app/src/flux/tasks/send-draft-task.ts`):
@@ -77,6 +89,7 @@ To run the Worker locally: `bun x wrangler d1 migrations apply mail-tracker --lo
 
 - Opens and clicks are hints, not proof: Apple Mail Privacy Protection prefetches images, Gmail proxies them, and security gateways follow links. Check the class and reason of each event.
 - Classification happens once, when the event arrives; a later burst does not reclassify earlier clicks.
+- **Published ranges go stale** between refreshes (`bun run refresh:networks`), and they only cover what each vendor publishes. Microsoft does not publish separate ranges for Safe Links detonation, which can run from wider Azure space. Mimecast's and Proofpoint's lists are their mail-server ranges, so their link scanners may use other addresses. Proofpoint Enterprise (Proofpoint on Demand) publishes no general list. Proofpoint's page is not machine-readable, so its ranges are copied by hand.
 - The plugin stores the API token in Mailspring's config file in plain text.
 - Links in quoted text are left as they are, so tracked links quoted from an earlier email keep crediting that email.
 - A link added, or a draft written, in the last moment before Send may go out untracked if its registration has not finished. Mailspring does not wait for it.
