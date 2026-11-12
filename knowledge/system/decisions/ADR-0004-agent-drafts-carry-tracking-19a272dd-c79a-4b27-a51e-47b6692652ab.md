@@ -72,4 +72,4 @@ Owner decision 2026-11-12 (split send through Fastmail, design v3): one email pe
 ## Evidence
 
 - reported: owner design, approved 2026-11-11 (ward-assistant chat).
-- tested: `src/cli/__tests__/compose.test.ts` (one and several recipients, `--no-track`, autolink, template slot), `src/cli/__tests__/sync-sent.test.ts` (matching by image, quoted images, re-runs), `src/__tests__/draft-preview.test.ts` (labelling, counting, later `sent_at`, forwarding baseline) and `mailspring-plugin/__tests__/pretracked.test.ts` (a pre-tracked draft through the stand-in caller of `send-draft-task.ts`), all against the in-memory Worker.
+- measured: tested in `src/cli/__tests__/compose.test.ts` (one and several recipients, `--no-track`, autolink, template slot), `src/cli/__tests__/sync-sent.test.ts` (matching by image, quoted images, re-runs), `src/__tests__/draft-preview.test.ts` (labelling, counting, later `sent_at`, forwarding baseline) and `mailspring-plugin/__tests__/pretracked.test.ts` (a pre-tracked draft through the stand-in caller of `send-draft-task.ts`), all against the in-memory Worker.

@@ -415,7 +415,7 @@ const PREVIEW =
 /** Gmail on-open fetches for non-Google token sets (ADR-0005), applied only on read. */
 const GMAIL_SELF = `(e.kind = 'open' AND e.class = 'proxy'
   AND e.reason LIKE 'on-open image proxy%'
-  AND (e.reason LIKE '%ggpht.com%' OR e.reason LIKE '%GoogleImageProxy%' OR e.reason LIKE '%Google%')
+  AND (e.reason LIKE '%ggpht.com%' OR e.reason LIKE '%GoogleImageProxy%')
   AND m.sent_at IS NOT NULL AND e.at >= m.sent_at
   AND EXISTS (SELECT 1 FROM recipients host WHERE host.token = e.recipient_token AND host.mail_host = 'other'))`;
 const COUNTED = `e.counted = 1 AND e.duplicate = 0 AND NOT ${PREVIEW} AND NOT ${GMAIL_SELF}`;

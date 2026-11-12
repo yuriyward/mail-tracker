@@ -56,5 +56,5 @@ Each recipient gets their own token set: one image token and one redirect token 
 ## Evidence
 
 - reported: owner direction 2026-11-11: Mailspring Pro is the baseline, not the ceiling; match it, then do better.
-- read: Mailspring master a8c31c1 `send-draft-task.ts` and `open-tracking-composer-extension.ts`, 2026-11-11.
-- tested: `mailspring-plugin/__tests__/send.test.ts` (per-recipient bodies through the stand-in caller, Graph shared path, pixel markup), `src/__tests__/recipients.test.ts` and `src/__tests__/unit.test.ts` (minting, attribution, forwarding hint).
+- measured: read Mailspring master a8c31c1 `send-draft-task.ts` and `open-tracking-composer-extension.ts`, 2026-11-11.
+- measured: tested in `mailspring-plugin/__tests__/send.test.ts` (per-recipient bodies through the stand-in caller, Graph shared path, pixel markup), `src/__tests__/recipients.test.ts` and `src/__tests__/unit.test.ts` (minting, attribution, forwarding hint).
