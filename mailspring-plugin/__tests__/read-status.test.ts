@@ -229,7 +229,25 @@ test("components render unopened, opened, shared copy, server labels and clicked
   expect(host.textContent).toContain(
     "Opened · 1 human opens · 1 proxy opens · 1 clicks"
   );
-  host.querySelector("button")?.click();
+  const button = host.querySelector("button");
+  expect(button?.title).toContain("Opened");
+  button?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+  button?.dispatchEvent(new MouseEvent("mouseenter"));
+  expect(panels).toHaveLength(0);
+  button?.dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true, button: 0 })
+  );
+  button?.dispatchEvent(
+    new MouseEvent("mouseup", { bubbles: true, button: 0 })
+  );
+  button?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+  expect(panels).toHaveLength(1);
+  const panel = new DOMParser()
+    .parseFromString(panels[0] ?? "", "text/html")
+    .querySelector<HTMLElement>("div");
+  expect(panel?.style.width).toBe("360px");
+  expect(panel?.style.minWidth).toBe("360px");
+  expect(panel?.style.overflowY).toBe("auto");
   expect(panels[0]).toContain("alex@example.com");
   expect(panels[0]).toContain("Possibly forwarded: device changed");
   expect(panels[0]).toContain("possibly preloaded by Gmail");
@@ -255,7 +273,27 @@ test("components render unopened, opened, shared copy, server labels and clicked
     })
   );
   await Bun.sleep(30);
-  expect(host.textContent).toContain("◉ 2 ↗ 1");
+  expect(host.textContent).toContain("2 ↗ 1");
+  expect(host.querySelector("svg")).not.toBeNull();
+  const threadButton = host.querySelector("button");
+  expect(threadButton?.title).toContain("1 human opens");
+  threadButton?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+  threadButton?.dispatchEvent(new MouseEvent("mouseenter"));
+  expect(panels).toHaveLength(1);
+  threadButton?.dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true, button: 0 })
+  );
+  threadButton?.dispatchEvent(
+    new MouseEvent("click", { bubbles: true, detail: 1 })
+  );
+  expect(panels).toHaveLength(2);
+  const threadPanel = new DOMParser()
+    .parseFromString(panels[1] ?? "", "text/html")
+    .querySelector<HTMLElement>("div");
+  expect(threadPanel?.style.width).toBe("360px");
+  // Native keyboard activation fires click without mousedown.
+  threadButton?.click();
+  expect(panels).toHaveLength(3);
   current = null;
   await render();
   expect(host.textContent).toBe("");

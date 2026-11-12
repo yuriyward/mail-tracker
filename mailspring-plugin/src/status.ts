@@ -30,13 +30,18 @@ export const createStatusComponents = (options: {
       "div",
       {
         style: {
+          boxSizing: "border-box",
+          flexShrink: 0,
           maxHeight: 360,
-          maxWidth: 480,
-          overflow: "auto",
+          minWidth: 360,
           overflowWrap: "anywhere",
+          overflowX: "hidden",
+          overflowY: "auto",
           padding: 12,
           whiteSpace: "normal",
+          width: 360,
         },
+        tabIndex: -1,
       },
       h("strong", null, statusText(detail)),
       detail.recipients.some((recipient) => recipient.address === "") &&
@@ -141,11 +146,19 @@ export const createStatusComponents = (options: {
       {
         "aria-label": text,
         className: `mail-tracker-status ${detail.events.some((event) => counted(event) && event.kind === "open") ? "opened" : "unopened"}`,
-        onClick: show,
-        onMouseDown: (event: ReactTypes.SyntheticEvent) => {
+        onClick: (event: ReactTypes.MouseEvent<HTMLButtonElement>) => {
           event.stopPropagation();
+          // Native button keyboard activation has no preceding mousedown.
+          if (event.detail === 0) {
+            show(event);
+          }
         },
-        onMouseEnter: show,
+        onMouseDown: (event: ReactTypes.MouseEvent<HTMLButtonElement>) => {
+          event.stopPropagation();
+          if (event.button === 0) {
+            show(event);
+          }
+        },
         style: {
           background: "transparent",
           border: 0,
@@ -156,8 +169,30 @@ export const createStatusComponents = (options: {
         title: text,
         type: "button",
       },
+      h(
+        "svg",
+        {
+          "aria-hidden": true,
+          fill: "none",
+          height: 12,
+          stroke: "currentColor",
+          strokeWidth: 2,
+          style: {
+            opacity: detail.events.some(
+              (event) => counted(event) && event.kind === "open"
+            )
+              ? 1
+              : 0.35,
+            verticalAlign: "middle",
+          },
+          viewBox: "0 0 24 16",
+          width: 18,
+        },
+        h("path", { d: "M1 8C4 3 8 1 12 1s8 2 11 7c-3 5-7 7-11 7S4 13 1 8Z" }),
+        h("circle", { cx: 12, cy: 8, r: 3 })
+      ),
       compact
-        ? `◉ ${detail.events.filter((event) => counted(event) && event.kind === "open").length} ↗ ${detail.events.filter((event) => counted(event) && event.kind === "click").length}`
+        ? ` ${detail.events.filter((event) => counted(event) && event.kind === "open").length} ↗ ${detail.events.filter((event) => counted(event) && event.kind === "click").length}`
         : text
     );
   };
