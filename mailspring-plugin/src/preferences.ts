@@ -57,7 +57,7 @@ export const MailTrackerPreferences = (): ReactElement => {
       })
     ),
     field(
-      "API token",
+      "Write API token",
       h("input", {
         onChange: (event: InputEvent) => {
           update({ apiToken: event.target.value });
@@ -65,6 +65,17 @@ export const MailTrackerPreferences = (): ReactElement => {
         style: { width: "100%" },
         type: "password",
         value: settings.apiToken,
+      })
+    ),
+    field(
+      "Read API token",
+      h("input", {
+        onChange: (event: InputEvent) => {
+          update({ readToken: event.target.value });
+        },
+        style: { width: "100%" },
+        type: "password",
+        value: settings.readToken ?? "",
       })
     )
   );

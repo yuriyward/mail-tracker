@@ -144,22 +144,26 @@ describe("settings", () => {
       apiToken: "",
       apiUrl: "",
       enabled: true,
+      readToken: "",
     });
     expect(
       readSettings({
         apiToken: " k ",
         apiUrl: " https://t.example.test/ ",
         enabled: false,
+        readToken: " read-key ",
       })
     ).toEqual({
       apiToken: "k",
       apiUrl: "https://t.example.test",
       enabled: false,
+      readToken: "read-key",
     });
     expect(readSettings({ apiUrl: 5, enabled: "yes" })).toEqual({
       apiToken: "",
       apiUrl: "",
       enabled: true,
+      readToken: "",
     });
   });
 

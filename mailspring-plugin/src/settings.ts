@@ -11,12 +11,14 @@ export interface Settings {
   enabled: boolean;
   apiUrl: string;
   apiToken: string;
+  readToken?: string;
 }
 
 /** Settings as stored in Mailspring's config; anything missing or malformed takes its default. */
 export const readSettings = (stored: JsonValue | undefined): Settings => {
   const parsed = record.safeParse(stored);
   const value = parsed.success ? parsed.data : {};
+  const readToken = text.safeParse(value.readToken);
   const apiToken = text.safeParse(value.apiToken);
   const apiUrl = text.safeParse(value.apiUrl);
   const enabled = flag.safeParse(value.enabled);
@@ -25,6 +27,7 @@ export const readSettings = (stored: JsonValue | undefined): Settings => {
     /** Base URL of the Worker, e.g. https://track.example.com */
     apiUrl: apiUrl.success ? apiUrl.data.trim().replace(/\/+$/u, "") : "",
     enabled: enabled.success ? enabled.data : true,
+    readToken: readToken.success ? readToken.data.trim() : "",
   };
 };
 

@@ -3,21 +3,21 @@ import {
   Actions,
   ComponentRegistry,
   ComposerExtension,
+  DatabaseStore,
+  Message,
   ExtensionRegistry,
   PreferencesUIStore,
   React,
 } from "mailspring-exports";
-import type {
-  ComposerFooterProps,
-  FooterComponent,
-  Message,
-} from "mailspring-exports";
+import type { ComposerFooterProps, FooterComponent } from "mailspring-exports";
 
 import { createExtension } from "./extension";
 import { MailTrackerPreferences } from "./preferences";
+import { createReadClient } from "./read-client";
 import { prune } from "./registry";
 import type { ConfigStore } from "./registry";
 import { CONFIG_KEY, readSettings } from "./settings";
+import { createStatusComponents } from "./status";
 import { createTracker } from "./tracker";
 import { httpsTransport } from "./transport";
 
@@ -55,6 +55,31 @@ const tracker = createTracker({
   transport: httpsTransport,
 });
 
+const reader = createReadClient({
+  config,
+  loadBody: async (message) => {
+    const { id } = message;
+    if (id === undefined || id === "") {
+      return "";
+    }
+    // oxlint-disable-next-line unicorn/no-array-method-this-argument -- Mailspring query API, not Array.find.
+    const loaded = await DatabaseStore.find(Message, id).include(
+      Message.attributes.body
+    );
+    return loaded?.body ?? "";
+  },
+  now: Date.now,
+  settings,
+  transport: httpsTransport,
+});
+const { MessageStatus, ThreadIcon } = createStatusComponents({
+  React,
+  openPanel: (element, rect) => {
+    Actions.openPopover(element, { direction: "down", originRect: rect });
+  },
+  read: reader.read,
+});
+
 const MailTrackerExtension = createExtension(ComposerExtension, {
   config,
   log,
@@ -80,6 +105,8 @@ RegistrationWatcher.displayName = "MailTrackerRegistrationWatcher";
 const unlisteners: (() => void)[] = [];
 
 export const activate = (): void => {
+  ComponentRegistry.register(ThreadIcon, { role: "ThreadListIcon" });
+  ComponentRegistry.register(MessageStatus, { role: "MessageHeaderStatus" });
   ExtensionRegistry.Composer.register(MailTrackerExtension);
   ComponentRegistry.register(RegistrationWatcher, { role: "Composer:Footer" });
   unlisteners.push(
@@ -111,6 +138,9 @@ export const activate = (): void => {
 };
 
 export const deactivate = (): void => {
+  ComponentRegistry.unregister(ThreadIcon);
+  ComponentRegistry.unregister(MessageStatus);
+  reader.clear();
   ExtensionRegistry.Composer.unregister(MailTrackerExtension);
   ComponentRegistry.unregister(RegistrationWatcher);
   for (const unlisten of unlisteners.splice(0)) {

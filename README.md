@@ -110,16 +110,24 @@ bun run check
    bun run build:plugin   # writes mailspring-plugin/lib/main.js
    ```
 
-   In Mailspring choose _Developer → Install a Plugin…_ and select the `mailspring-plugin` folder (or link it into Mailspring's `packages` directory). Open _Preferences → Mail Tracker_, enter the Worker URL (`https://track.example.com`) and the API token, and keep _Track opens and clicks_ on. Turn off Mailspring Pro's own read receipts and link tracking so a message is not tracked twice.
+   In Mailspring choose _Developer → Install a Plugin…_ and select the `mailspring-plugin` folder (or link it into Mailspring's `packages` directory). Open _Preferences → Mail Tracker_, enter the Worker URL (`https://track.example.com`), the write API token (`API_TOKEN`) and the read API token (`API_READ_TOKEN`), and keep _Track opens and clicks_ on. Turn off Mailspring Pro's own read receipts and link tracking so a message is not tracked twice.
 
 To run the Worker locally: `bun x wrangler d1 migrations apply mail-tracker --local`, put `API_TOKEN=...` and `API_READ_TOKEN=...` in `.dev.vars` (ignored by git), then `bun run dev`. Locally there is no Access in front, so `/app` answers 401 unless you send a valid assertion. `bun run build:web` rebuilds the app, and `bun run check` builds it before the tests that inspect the build.
+
+### Read status in Mailspring
+
+The plugin registers in the same `ThreadListIcon` and `MessageHeaderStatus` slots as Pro. The thread icon shows the most recent tracked outgoing message in the thread (including after an untracked reply); the header shows that message's own status. Both show opens and clicks; the header separates human and proxy opens. Hover or click for a scrollable panel with per-recipient totals, event times, country, device user agent, the API's labels, proxy client, forwarding/preload hints and clicked link names and destinations. Shared copies explicitly say “Shared copy, recipient unknown”; removed recipients are marked separately. Opens remain signals, not proof of reading.
+
+Enter the **Read API token** next to the write token in Preferences → Mail Tracker. Reads use HTTPS with `Authorization: Bearer <read token>` through Node (no renderer CORS preflight). Reads never block rendering: missing configuration, untracked mail, rejected/malformed responses and offline errors render nothing. Endpoint responses and failures are cached for 60 seconds per window and configuration; visible components refresh every 60 seconds and on window focus, respecting that cache. No notifications or Worker deployment are involved.
+
+A saved registration maps the sent message's `headerMessageId` to its message token, including Mailspring's clean Sent copy. Without a registration, only a message in a Sent category is inspected: its body is loaded asynchronously if necessary, and a same-origin `/i/<token>.png` or `/l/<token>` outside quoted text is resolved with `GET /api/tokens/<token>`. A clean copy from another sender has no such identity and shows nothing. Existing registration housekeeping removes records after 30 days; a clean copy whose registration has expired also shows nothing. The client supports cached `GET /api/messages` list reads and uses `GET /api/messages/<token>` for the full status and event panel.
 
 ## Limits
 
 - Opens and clicks are hints, not proof: Apple Mail Privacy Protection prefetches images, Gmail proxies them, and security gateways follow links. Check the class and reason of each event.
 - Classification happens once, when the event arrives; a later burst does not reclassify earlier clicks.
 - **Published ranges go stale** between refreshes (`bun run refresh:networks`), and they only cover what each vendor publishes. Microsoft does not publish separate ranges for Safe Links detonation, which can run from wider Azure space. Mimecast's and Proofpoint's lists are their mail-server ranges, so their link scanners may use other addresses. Proofpoint Enterprise (Proofpoint on Demand) publishes no general list. Proofpoint's page is not machine-readable, so its ranges are copied by hand.
-- The plugin stores the API token in Mailspring's config file in plain text.
+- The plugin stores both API tokens in Mailspring's config file in plain text.
 - Links in quoted text are left as they are, so tracked links quoted from an earlier email keep crediting that email.
 - A link added, or a draft written, in the last moment before Send may go out untracked if its registration has not finished. Mailspring does not wait for it.
 - Registrations are kept in Mailspring's config for 30 days; the main window prunes older ones on start-up.

@@ -2,6 +2,7 @@
 // The parts of Mailspring's plugin API this plugin uses. Mailspring provides the module at
 // runtime; these declarations follow its sources and are rechecked per release (ADR-0002).
 declare module "mailspring-exports" {
+  import type * as HostReact from "react";
   export type JsonValue = MailspringJsonValue;
 
   export interface Contact {
@@ -10,6 +11,9 @@ declare module "mailspring-exports" {
 
   /** A draft as Mailspring hands it to extensions (see app/src/flux/models/message.ts). */
   export class Message {
+    id?: string;
+    static attributes: { body: { modelKey: string } };
+    categories?: () => { role: string }[];
     headerMessageId: string;
     accountId: string;
     draft: boolean;
@@ -56,19 +60,33 @@ declare module "mailspring-exports" {
     draft: Message;
     headerMessageId: string;
   }
-  export type FooterComponent = ((props: ComposerFooterProps) => null) & {
-    displayName?: string;
-  };
+  export type FooterComponent =
+    HostReact.FunctionComponent<ComposerFooterProps>;
   export interface ComponentRegistryApi {
-    register: (component: FooterComponent, options: { role: string }) => void;
-    unregister: (component: FooterComponent) => void;
+    register: <P>(
+      component: HostReact.FunctionComponent<P>,
+      options: { role: string }
+    ) => void;
+    unregister: <P>(component: HostReact.FunctionComponent<P>) => void;
   }
+  export const DatabaseStore: {
+    find: (
+      model: typeof Message,
+      id: string
+    ) => {
+      include: (attribute: { modelKey: string }) => Promise<Message | null>;
+    };
+  };
   export const ComponentRegistry: ComponentRegistryApi;
 
   export interface ActionApi<T> {
     listen: (callback: (payload: T) => void) => () => void;
   }
   export interface ActionsApi {
+    openPopover: (
+      element: ReactElement,
+      options: { originRect: DOMRect; direction: string }
+    ) => void;
     sendDraft: ActionApi<string>;
     draftDeliverySucceeded: ActionApi<{ headerMessageId: string }>;
   }
@@ -82,31 +100,12 @@ declare module "mailspring-exports" {
   }
   export const ExtensionRegistry: ExtensionRegistryApi;
 
-  export interface ReactElement {
-    readonly type: string | Component;
-  }
-  export type ReactNode = ReactElement | string | null;
+  export type ReactElement = HostReact.ReactElement;
   export type Component = () => ReactElement;
   export interface InputEvent {
     target: { value: string; checked: boolean };
   }
-  export type PropValue =
-    | string
-    | number
-    | boolean
-    | Record<string, string | number>
-    | ((event: InputEvent) => void);
-
-  export interface ReactApi {
-    createElement: (
-      type: string | Component,
-      props: Record<string, PropValue> | null,
-      ...children: ReactNode[]
-    ) => ReactElement;
-    useState: <T>(initial: T) => [T, (value: T) => void];
-    useEffect: (effect: () => void) => void;
-  }
-  export const React: ReactApi;
+  export const React: typeof HostReact;
 
   export interface PreferencesTab {
     tabId: string;
