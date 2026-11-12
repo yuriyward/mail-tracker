@@ -169,6 +169,9 @@ describe("GET /l/:token", () => {
   });
 
   test("refuses a stored destination that no longer passes the allow-list", async () => {
+    // A row stored before the allow-list tightened; rows never change (migration 0005),
+    // so the stand-in lifts that guard to plant one.
+    h.db.sqlite.run("DROP TRIGGER links_token_immutable");
     h.db.sqlite.run("UPDATE links SET url = ? WHERE position = 0", [NO_SCRIPT]);
     const response = await h.hit(sent.links[0]?.redirectUrl);
     expect(response.status).toBe(404);

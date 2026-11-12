@@ -26,6 +26,22 @@ const receiptSchema = z.object({
   token: z.string(),
 });
 
+const splitReceiptSchema = z.object({
+  items: z.array(
+    z.object({
+      address: z.string(),
+      i: z.number(),
+      imageToken: z.string(),
+      linkTokens: z.array(z.string()),
+      role: z.string(),
+    })
+  ),
+  links: z.array(z.string()),
+  mode: z.literal("per-recipient"),
+  status: z.literal("tracked"),
+  token: z.string(),
+});
+
 const reportSchema = z.object({
   failed: z.number(),
   marked: z.number(),
@@ -134,6 +150,61 @@ describe("the command-line tools as separate processes", () => {
     expect(h.rows("SELECT sent_at FROM messages")).toEqual([
       { sent_at: sentAt },
     ]);
+  });
+
+  test("compose --per-recipient writes one copy per recipient, the owner's copy and the receipt", async () => {
+    const out = path.join(dir, "split");
+    const composed = await run("compose.ts", [
+      "--per-recipient",
+      "--to",
+      "alex@example.com",
+      "--bcc",
+      "boss@example.net",
+      "--subject",
+      "Proposal",
+      "--body-file",
+      path.join(dir, "body.md"),
+      "--out",
+      out,
+    ]);
+    expect(composed.stderr).toBe("");
+    expect(composed.code).toBe(0);
+    const printed = readFileSync(path.join(out, "receipt.json"), "utf-8");
+    expect(composed.stdout).toBe(printed);
+    const receipt = splitReceiptSchema.parse(JSON.parse(printed));
+    expect(receipt.items.map((item) => [item.i, item.address])).toEqual([
+      [0, "alex@example.com"],
+      [1, "boss@example.net"],
+    ]);
+    const read = (...parts: string[]): string =>
+      readFileSync(path.join(out, ...parts), "utf-8");
+    for (const item of receipt.items) {
+      const html = read("recipients", String(item.i), "body.html");
+      expect(html).toContain(
+        `<img alt="" src="${origin}/i/${item.imageToken}.png">`
+      );
+      expect(html).toContain(`href="${origin}/l/${item.linkTokens[0] ?? ""}"`);
+      expect(read("recipients", String(item.i), "body.txt")).toBe(
+        read("self", "body.txt")
+      );
+    }
+    expect(read("self", "body.html")).toContain(
+      'href="https://example.org/deck"'
+    );
+    expect(read("self", "body.html")).not.toContain(origin);
+  });
+
+  test("compose --per-recipient refuses --no-track", async () => {
+    const refused = await run("compose.ts", [
+      "--per-recipient",
+      "--no-track",
+      "--to",
+      "alex@example.com",
+      "--body-file",
+      path.join(dir, "body.md"),
+    ]);
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain("leave out --no-track");
   });
 
   test("plain http is refused for anything but loopback", async () => {

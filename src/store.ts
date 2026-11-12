@@ -14,6 +14,7 @@ import {
   pixelTarget,
   recipientLinkRow,
   recipientRow,
+  tokenTargetRow,
 } from "./schema";
 import type {
   EventRow,
@@ -26,6 +27,7 @@ import type {
   RecipientActivityRow,
   RecipientLinkRow,
   RecipientRow,
+  TokenTargetRow,
 } from "./schema";
 
 /** A repeat by the same actor on the same image or link within this window is not counted again. */
@@ -159,6 +161,37 @@ const fillRecipientLinks = async (
   }));
 };
 
+const messageLinks = async (db: Db, messageToken: string): Promise<LinkRow[]> =>
+  await many(
+    db
+      .prepare("SELECT * FROM links WHERE message_token = ? ORDER BY position")
+      .bind(messageToken),
+    linkRow
+  );
+
+/**
+ * A token's destination, set and message are fixed when it is minted and never change
+ * (migration 0005 refuses such an UPDATE): the split-send gate checks a redirect against
+ * its destination before it lets a copy out, so a token pointed elsewhere afterwards would
+ * defeat it. Throws if a registration changed one anyway.
+ */
+export const assertTokensKept = (
+  before: readonly LinkRow[],
+  after: readonly LinkRow[]
+): void => {
+  const now = new Map(after.map((link) => [link.token, link]));
+  for (const link of before) {
+    const kept = now.get(link.token);
+    if (
+      kept?.url !== link.url ||
+      kept.position !== link.position ||
+      kept.message_token !== link.message_token
+    ) {
+      throw new Error(`link token ${link.token} changed after it was minted`);
+    }
+  }
+};
+
 /**
  * Creates the message for a draft, or updates its subject and recipient, and adds a token for
  * every URL not yet registered. Idempotent per draft and URL, so repeated registration while
@@ -172,6 +205,7 @@ export const registerMessage = async (
     db.prepare("SELECT * FROM messages WHERE draft_id = ?").bind(r.draftId),
     messageRow
   );
+  const before = existing ? await messageLinks(db, existing.token) : [];
   await db.batch([
     db
       .prepare(
@@ -212,12 +246,8 @@ export const registerMessage = async (
   if (!message) {
     throw new Error("registered message not found");
   }
-  const links = await many(
-    db
-      .prepare("SELECT * FROM links WHERE message_token = ? ORDER BY position")
-      .bind(message.token),
-    linkRow
-  );
+  const links = await messageLinks(db, message.token);
+  assertTokensKept(before, links);
   const recipients = await fillRecipientLinks(
     db,
     message.token,
@@ -583,3 +613,34 @@ export const unsentImageTokens = async (
   }
   return byMessage;
 };
+
+/**
+ * What a token stands for, for `GET /api/tokens/<token>`: a recipient's image or redirect
+ * (ADR-0003), or a message-level one from before 0002. Tokens are random, so at most one
+ * row matches.
+ */
+export const tokenTarget = async (
+  db: Db,
+  token: string
+): Promise<TokenTargetRow | null> =>
+  await one(
+    db
+      .prepare(
+        `SELECT t.*, (SELECT COUNT(*) FROM recipients r WHERE r.message_token = t.message_token
+             AND r.current = 1 AND r.address != '') AS per_recipient
+         FROM (
+           SELECT 'image' AS kind, message_token, address, NULL AS url, NULL AS position
+           FROM recipients WHERE token = ?1
+           UNION ALL
+           SELECT 'link', l.message_token, r.address, l.url, l.position FROM recipient_links rl
+           JOIN links l ON l.token = rl.link_token
+           JOIN recipients r ON r.token = rl.recipient_token WHERE rl.token = ?1
+           UNION ALL
+           SELECT 'image', token, NULL, NULL, NULL FROM messages WHERE token = ?1
+           UNION ALL
+           SELECT 'link', message_token, NULL, url, position FROM links WHERE token = ?1
+         ) t LIMIT 1`
+      )
+      .bind(token),
+    tokenTargetRow
+  );

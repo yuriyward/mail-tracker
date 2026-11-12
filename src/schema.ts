@@ -51,6 +51,20 @@ export const linkWithSentAt = linkRow.extend({
 });
 export type LinkWithSentAt = z.infer<typeof linkWithSentAt>;
 
+/** What any token resolves to, for the read API's token lookup (store.tokenTarget). */
+export const tokenTargetRow = z.object({
+  /** The token set's address; null for a message-level token, '' for a shared set. */
+  address: z.string().nullable(),
+  kind: z.enum(["image", "link"]),
+  message_token: z.string(),
+  /** Current token sets of the message with a known address. */
+  per_recipient: z.number(),
+  /** The destination's position among the message's links; null for an image. */
+  position: z.number().nullable(),
+  url: z.string().nullable(),
+});
+export type TokenTargetRow = z.infer<typeof tokenTargetRow>;
+
 /** What an image token resolves to. */
 export const pixelTarget = z.object({
   message_token: z.string(),

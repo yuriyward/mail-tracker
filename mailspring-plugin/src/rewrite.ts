@@ -94,7 +94,7 @@ export const linkTexts = (root: ParentNode, origin: string): LinkTexts => {
 };
 
 /** Removes tracking images already in the body, e.g. quoted from an earlier tracked email. */
-const removePixels = (root: ParentNode, origin: string): void => {
+export const removePixels = (root: ParentNode, origin: string): void => {
   for (const img of root.querySelectorAll("img")) {
     if ((img.getAttribute("src") ?? "").startsWith(`${origin}/i/`)) {
       img.remove();
@@ -155,6 +155,30 @@ export const untrack = (
 };
 
 /**
+ * Points every link outside quoted text whose destination is a key of `hrefs` at that
+ * key's value; other links are left untouched. Returns the number of links rewritten.
+ * `applyTokenSet` passes a token set's redirects; `bun run compose --per-recipient` passes
+ * each destination to itself for the owner's copy, so it rewrites exactly the same links,
+ * in the same order, as the recipients' copies.
+ */
+export const pointLinks = (
+  root: ParentNode,
+  hrefs: Readonly<Record<string, string>>,
+  carried: Readonly<Record<string, string>> = {}
+): number => {
+  let rewritten = 0;
+  for (const anchor of root.querySelectorAll("a[href]")) {
+    const url = isQuoted(anchor) ? null : destination(anchor, carried);
+    const href = url === null ? undefined : hrefs[url];
+    if (href !== undefined) {
+      anchor.setAttribute("href", href);
+      rewritten += 1;
+    }
+  }
+  return rewritten;
+};
+
+/**
  * Applies one recipient's token set synchronously: links whose URL was registered point at
  * their redirect, every other link is left untouched, and the image goes before any quoted
  * text, replacing any tracking image already there. `carried` maps redirects the draft
@@ -168,15 +192,7 @@ export const applyTokenSet = (
   carried: Readonly<Record<string, string>> = {}
 ): number => {
   removePixels(root, origin);
-  let rewritten = 0;
-  for (const anchor of root.querySelectorAll("a[href]")) {
-    const url = isQuoted(anchor) ? null : destination(anchor, carried);
-    const redirect = url === null ? undefined : entry.links[url];
-    if (redirect !== undefined) {
-      anchor.setAttribute("href", redirect);
-      rewritten += 1;
-    }
-  }
+  const rewritten = pointLinks(root, entry.links, carried);
   const img = pixel(root.ownerDocument, entry.imageUrl);
   const quote = root.querySelector(QUOTE);
   if (quote?.parentNode) {

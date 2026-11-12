@@ -15,6 +15,7 @@ import {
   pixelOwner,
   registerMessage,
   tokenSetLinks,
+  tokenTarget,
   unsentImageTokens,
 } from "./store";
 import type { RecipientSet } from "./store";
@@ -287,6 +288,31 @@ export const apiRoutes = (now: () => number) => {
         hints,
         preloads
       ),
+    });
+  });
+
+  /**
+   * What one image or redirect token stands for, so a send gate can check a copy before
+   * it goes out: `recipient` is the token set's address (null for a shared set or a
+   * message-level token), `url` a redirect's destination and `position` its place among
+   * the message's links (null for an image). Rows are never changed once minted.
+   */
+  app.get("/tokens/:token", readAuth, async (c) => {
+    const token = c.req.param("token");
+    const target = isToken(token) ? await tokenTarget(c.env.DB, token) : null;
+    if (!target) {
+      return c.json({ error: "not found" }, 404);
+    }
+    return c.json({
+      kind: target.kind,
+      message: target.message_token,
+      position: target.position,
+      recipient:
+        target.address === null || target.address === ""
+          ? null
+          : target.address,
+      recipients: target.per_recipient,
+      url: target.url,
     });
   });
 
