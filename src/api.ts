@@ -7,6 +7,8 @@ import { checkDestination } from "./destinations";
 import type { AppEnv, Db } from "./env";
 import { forwardingHints } from "./forwarding";
 import { cleanLinkText, linkName } from "./link-names";
+import { resolveMailHost, tokenSetHosts } from "./mail-host";
+import type { HostLookup } from "./mail-host";
 import { tokenSetAddresses } from "./recipients";
 import { mintRequest, sentRequest } from "./schema";
 import type { MintRequest } from "./schema";
@@ -146,7 +148,10 @@ const listRows = (view: ListView, imageTokens: Map<string, string[]> | null) =>
   });
 
 /** The authenticated API: mint tracking for one outgoing email, and read engagement. */
-export const apiRoutes = (now: () => number) => {
+export const apiRoutes = (
+  now: () => number,
+  lookup: HostLookup = resolveMailHost
+) => {
   const app = new Hono<AppEnv>();
 
   app.post("/messages", writeAuth, async (c) => {
@@ -175,6 +180,11 @@ export const apiRoutes = (now: () => number) => {
         text: checked.text.get(url) ?? "",
         url,
       })),
+      mailHosts: await tokenSetHosts(
+        body.data.recipients,
+        body.data.shared,
+        lookup
+      ),
       newToken,
       recipient: body.data.recipient,
       recipients: tokenSetAddresses(body.data.recipients, body.data.shared),

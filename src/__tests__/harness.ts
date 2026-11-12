@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createApp } from "../app";
 import type { JwksSource } from "../auth";
 import type { Bindings, Db } from "../env";
+import type { HostLookup } from "../mail-host";
 import { eventRow } from "../schema";
 import { testDb } from "./d1";
 
@@ -94,7 +95,9 @@ const backgroundWork = () => {
 };
 
 /** One isolated Worker with an in-memory D1, a settable clock and Access keys. */
-export const createHarness = async () => {
+export const createHarness = async (
+  mailHost: HostLookup = async () => await Promise.resolve("unknown")
+) => {
   const keys = await keyPair(KID);
   const jwksCalls: boolean[] = [];
   const state = {
@@ -132,7 +135,7 @@ export const createHarness = async () => {
     state.jwksCalls.push(refresh);
     return refresh ? state.rotated : state.jwks;
   };
-  const app = createApp({ jwks: source, now: () => state.clock });
+  const app = createApp({ jwks: source, mailHost, now: () => state.clock });
   const { executionCtx, pending } = backgroundWork();
 
   /**

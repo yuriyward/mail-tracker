@@ -26,6 +26,7 @@ export const EVENT_LABELS = [
   "Prefetch",
   "Scanner",
   "You",
+  "You (Gmail)",
   "Unknown",
 ] as const;
 export type EventLabel = (typeof EVENT_LABELS)[number];
@@ -68,9 +69,13 @@ export const eventDisplay = (e: {
   kind: "open" | "click";
   reason: string;
   preview?: number;
+  gmail_self?: number | undefined;
 }): EventDisplay => {
   if (e.preview === 1) {
     return { label: "Draft preview", via: null };
+  }
+  if (e.gmail_self === 1) {
+    return { label: "You (Gmail)", via: null };
   }
   const action: EventLabel = e.kind === "open" ? "Opened" : "Clicked";
   if (e.class === "human") {

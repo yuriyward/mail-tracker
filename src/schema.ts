@@ -30,6 +30,7 @@ export type LinkRow = z.infer<typeof linkRow>;
 export const recipientRow = z.object({
   address: z.string(),
   current: z.number(),
+  mail_host: z.enum(["google", "other", "unknown"]).default("unknown"),
   message_token: z.string(),
   position: z.number(),
   token: z.string(),
@@ -80,6 +81,7 @@ export const eventRow = z.object({
   counted: z.number(),
   country: z.string(),
   duplicate: z.number(),
+  gmail_self: z.number().optional(),
   id: z.number(),
   ip: z.string(),
   kind: z.enum(["open", "click"]),

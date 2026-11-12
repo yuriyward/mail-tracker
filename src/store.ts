@@ -2,6 +2,7 @@ import type { z } from "zod";
 
 import { BURST_WINDOW_MS } from "./classify";
 import type { Db, Row, Statement } from "./env";
+import type { MailHost } from "./mail-host";
 import {
   count,
   eventRow,
@@ -59,6 +60,7 @@ export interface Registration {
   links: { url: string; text: string }[];
   /** Addresses that get their own token set (see tokenSetAddresses). */
   recipients: string[];
+  mailHosts?: ReadonlyMap<string, MailHost>;
   shared: boolean;
   at: number;
   newToken: () => string;
@@ -90,13 +92,18 @@ const recipientStatements = (db: Db, r: Registration): Statement[] => [
   ...r.recipients.map((address) =>
     db
       .prepare(
-        `INSERT INTO recipients (token, message_token, address, position, current)
+        `INSERT INTO recipients (token, message_token, address, position, current, mail_host)
          SELECT ?, m.token, ?,
-           (SELECT COALESCE(MAX(position) + 1, 0) FROM recipients WHERE message_token = m.token), 1
+           (SELECT COALESCE(MAX(position) + 1, 0) FROM recipients WHERE message_token = m.token), 1, ?
          FROM messages m WHERE m.draft_id = ?
-         ON CONFLICT (message_token, address) DO UPDATE SET current = 1`
+         ON CONFLICT (message_token, address) DO UPDATE SET current = 1, mail_host = excluded.mail_host`
       )
-      .bind(r.newToken(), address, r.draftId)
+      .bind(
+        r.newToken(),
+        address,
+        r.mailHosts?.get(address) ?? "unknown",
+        r.draftId
+      )
   ),
 ];
 
@@ -367,7 +374,7 @@ export const countOtherLinksInBurst = async (
  */
 export const insertEvent = async (
   db: Db,
-  event: Omit<EventRow, "id" | "duplicate" | "preview">
+  event: Omit<EventRow, "id" | "duplicate" | "preview" | "gmail_self">
 ): Promise<void> => {
   await db
     .prepare(
@@ -405,7 +412,13 @@ const OF_MESSAGE = "FROM events e WHERE e.message_token = m.token";
  */
 const PREVIEW =
   "(m.draft_tracked = 1 AND (m.sent_at IS NULL OR e.at < m.sent_at))";
-const COUNTED = `e.counted = 1 AND e.duplicate = 0 AND NOT ${PREVIEW}`;
+/** Gmail on-open fetches for non-Google token sets (ADR-0005), applied only on read. */
+const GMAIL_SELF = `(e.kind = 'open' AND e.class = 'proxy'
+  AND e.reason LIKE 'on-open image proxy%'
+  AND (e.reason LIKE '%ggpht.com%' OR e.reason LIKE '%GoogleImageProxy%' OR e.reason LIKE '%Google%')
+  AND m.sent_at IS NOT NULL AND e.at >= m.sent_at
+  AND EXISTS (SELECT 1 FROM recipients host WHERE host.token = e.recipient_token AND host.mail_host = 'other'))`;
+const COUNTED = `e.counted = 1 AND e.duplicate = 0 AND NOT ${PREVIEW} AND NOT ${GMAIL_SELF}`;
 /** The emails the list shows: sent, or with events (e.g. the sent notice was lost). */
 const LISTED = `(m.sent_at IS NOT NULL OR EXISTS (SELECT 1 ${OF_MESSAGE}))`;
 
@@ -474,7 +487,7 @@ export const messageDetail = async (
     many(
       db
         .prepare(
-          `SELECT e.*, ${PREVIEW} AS preview FROM events e
+          `SELECT e.*, ${PREVIEW} AS preview, ${GMAIL_SELF} AS gmail_self FROM events e
            JOIN messages m ON m.token = e.message_token
            WHERE e.message_token = ? ORDER BY e.at, e.id`
         )
@@ -483,8 +496,16 @@ export const messageDetail = async (
     ),
     recipientSets(db, token),
   ]);
-  // A draft preview is kept raw but never counted (ADR-0004).
-  const read = events.map((e) => (e.preview === 1 ? { ...e, counted: 0 } : e));
+  // Preview and Gmail self rules apply only on read; raw events stay intact.
+  const read = events.map((e) => {
+    if (e.preview === 1) {
+      return { ...e, counted: 0 };
+    }
+    if (e.gmail_self === 1) {
+      return { ...e, class: "self" as const, counted: 0, gmail_self: 1 };
+    }
+    return e;
+  });
   return { events: read, links, message, recipients: sets.recipients };
 };
 

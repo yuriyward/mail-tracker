@@ -203,11 +203,19 @@ describe("forwarding hint", () => {
     {
       address: "alex@example.com",
       current: 1,
+      mail_host: "unknown",
       message_token: "m",
       position: 0,
       token: "ra",
     },
-    { address: "", current: 1, message_token: "m", position: 1, token: "rs" },
+    {
+      address: "",
+      current: 1,
+      mail_host: "unknown",
+      message_token: "m",
+      position: 1,
+      token: "rs",
+    },
   ];
   let id = 0;
   const event = (overrides: Partial<EventRow>): EventRow => {
