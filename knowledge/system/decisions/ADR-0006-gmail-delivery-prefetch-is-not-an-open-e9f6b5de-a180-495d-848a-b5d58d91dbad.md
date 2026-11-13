@@ -1,5 +1,5 @@
 ---
-id: ADR-NEXT-gmail-delivery-prefetch-is-not-an-open-e9f6b5de-a180-495d-848a-b5d58d91dbad
+id: ADR-0006
 type: decision
 status: accepted
 domain: system
@@ -13,7 +13,7 @@ supersedes: []
 superseded_by: null
 ---
 
-# ADR-NEXT-gmail-delivery-prefetch-is-not-an-open-e9f6b5de-a180-495d-848a-b5d58d91dbad — Gmail delivery prefetch is not an open
+# ADR-0006 — Gmail delivery prefetch is not an open
 
 ## Question
 
