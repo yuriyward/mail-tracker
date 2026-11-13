@@ -24,6 +24,7 @@ export const EVENT_LABELS = [
   "Clicked",
   "Draft preview",
   "Prefetch",
+  "Prefetch by Gmail",
   "Scanner",
   "You",
   "You (Gmail)",
@@ -70,12 +71,16 @@ export const eventDisplay = (e: {
   reason: string;
   preview?: number;
   gmail_self?: number | undefined;
+  gmail_prefetch?: number | undefined;
 }): EventDisplay => {
   if (e.preview === 1) {
     return { label: "Draft preview", via: null };
   }
   if (e.gmail_self === 1) {
     return { label: "You (Gmail)", via: null };
+  }
+  if (e.gmail_prefetch === 1) {
+    return { label: "Prefetch by Gmail", via: null };
   }
   const action: EventLabel = e.kind === "open" ? "Opened" : "Clicked";
   if (e.class === "human") {

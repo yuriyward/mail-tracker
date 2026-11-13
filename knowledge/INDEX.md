@@ -20,3 +20,4 @@ Feature `status` is derived: `active` while an open work order claims it, `shipp
 | `ADR-0003` | decision | accepted | [Per-recipient tracking tokens](system/decisions/ADR-0003-per-recipient-tracking-tokens-ce549033-8de8-4e29-be7b-d52ed4c6308e.md) |
 | `ADR-0004` | decision | accepted | [Agent-composed drafts carry tracking](system/decisions/ADR-0004-agent-drafts-carry-tracking-19a272dd-c79a-4b27-a51e-47b6692652ab.md) |
 | `ADR-0005` | decision | accepted | [Gmail owner views for non-Google recipients](system/decisions/ADR-0005-gmail-owner-views-for-non-google-recipients-67e70d7d-ac3a-472d-bec1-78cd29c3740f.md) |
+| `ADR-NEXT-gmail-delivery-prefetch-is-not-an-open-e9f6b5de-a180-495d-848a-b5d58d91dbad` | decision | accepted | [Gmail delivery prefetch is not an open](system/decisions/ADR-NEXT-gmail-delivery-prefetch-is-not-an-open-e9f6b5de-a180-495d-848a-b5d58d91dbad.md) |

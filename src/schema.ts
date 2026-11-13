@@ -81,6 +81,7 @@ export const eventRow = z.object({
   counted: z.number(),
   country: z.string(),
   duplicate: z.number(),
+  gmail_prefetch: z.number().optional(),
   gmail_self: z.number().optional(),
   id: z.number(),
   ip: z.string(),

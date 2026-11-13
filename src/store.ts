@@ -418,7 +418,20 @@ const GMAIL_SELF = `(e.kind = 'open' AND e.class = 'proxy'
   AND (e.reason LIKE '%ggpht.com%' OR e.reason LIKE '%GoogleImageProxy%')
   AND m.sent_at IS NOT NULL AND e.at >= m.sent_at
   AND EXISTS (SELECT 1 FROM recipients host WHERE host.token = e.recipient_token AND host.mail_host = 'other'))`;
-const COUNTED = `e.counted = 1 AND e.duplicate = 0 AND NOT ${PREVIEW} AND NOT ${GMAIL_SELF}`;
+/** First post-send Gmail image fetch per token set; raw rows stay unchanged. */
+const GMAIL_PREFETCH = `(e.kind = 'open' AND e.class = 'proxy'
+  AND e.reason LIKE 'on-open image proxy%'
+  AND (e.reason LIKE '%ggpht.com%' OR e.reason LIKE '%GoogleImageProxy%')
+  AND m.sent_at IS NOT NULL AND e.at >= m.sent_at AND e.at <= m.sent_at + 30000
+  AND NOT EXISTS (SELECT 1 FROM events earlier
+    WHERE earlier.message_token = e.message_token
+      AND earlier.recipient_token IS e.recipient_token
+      AND earlier.kind = 'open' AND earlier.class = 'proxy'
+      AND earlier.reason LIKE 'on-open image proxy%'
+      AND (earlier.reason LIKE '%ggpht.com%' OR earlier.reason LIKE '%GoogleImageProxy%')
+      AND earlier.at >= m.sent_at
+      AND (earlier.at < e.at OR (earlier.at = e.at AND earlier.id < e.id))))`;
+const COUNTED = `e.counted = 1 AND e.duplicate = 0 AND NOT ${PREVIEW} AND NOT ${GMAIL_SELF} AND NOT ${GMAIL_PREFETCH}`;
 /** The emails the list shows: sent, or with events (e.g. the sent notice was lost). */
 const LISTED = `(m.sent_at IS NOT NULL OR EXISTS (SELECT 1 ${OF_MESSAGE}))`;
 
@@ -487,7 +500,7 @@ export const messageDetail = async (
     many(
       db
         .prepare(
-          `SELECT e.*, ${PREVIEW} AS preview, ${GMAIL_SELF} AS gmail_self FROM events e
+          `SELECT e.*, ${PREVIEW} AS preview, ${GMAIL_SELF} AS gmail_self, ${GMAIL_PREFETCH} AS gmail_prefetch FROM events e
            JOIN messages m ON m.token = e.message_token
            WHERE e.message_token = ? ORDER BY e.at, e.id`
         )
@@ -503,6 +516,9 @@ export const messageDetail = async (
     }
     if (e.gmail_self === 1) {
       return { ...e, class: "self" as const, counted: 0, gmail_self: 1 };
+    }
+    if (e.gmail_prefetch === 1) {
+      return { ...e, counted: 0 };
     }
     return e;
   });
