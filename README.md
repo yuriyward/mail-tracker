@@ -74,6 +74,20 @@ bun run compose --to alex@example.com --subject "Proposal" \
 - **`bun run sync-sent`** marks emails sent from outside Mailspring. The agent pipes the owner's recently sent messages in as JSON, `[{ "subject", "recipients": [...], "sentAt": ms or ISO date, "html" }]`. Each message is matched by our image token in its HTML, outside quoted text, to an email that is not marked sent (`GET /api/messages?unsent=1`), and its `sentAt` is reported. The report lists each message with a `status`: `marked`, `duplicate` (the email was already matched by an earlier message of the input), `unmatched`, `invalid` (`sentAt` is not a date) or `failed` (the Worker's `httpStatus` is given). It exits 1 when any failed or was invalid. Running it again changes nothing, since the Worker keeps the first send time. It needs both tokens: the read token to list, the write token to mark.
 - Until an email is marked sent, every hit on it is a draft preview and not counted (see **Draft preview** above). Run `sync-sent` after the owner sends.
 
+## DMARC report archive
+
+Cloudflare DMARC Management keeps only about the last 32 days of aggregate-report rows. `bun run dmarc-pull` keeps a local copy of them (raw rows only; nothing associates them with messages):
+
+```bash
+bun run dmarc-pull --zone <zoneTag> --token-file ~/.config/mail-tracker/cloudflare-token \
+  --out state/dmarc [--days 31]
+```
+
+- It asks Cloudflare's GraphQL API (`viewer.zones.dmarcReportsAdaptive`) for the rows whose `datetime`, the report's arrival time, lies in the last `--days` days (1 to 32; Cloudflare refuses older data). The token needs Analytics read on the zone. 27 fields are fetched (Cloudflare allows 30 per query). A window whose answer fills the row limit (10,000) is split in half and asked again; a one-second window that is still full fails the run as `truncated` rather than pass as complete.
+- `<out>/rows.jsonl` gets one row per line, as Cloudflare returned it. Rows are keyed by `orgName`, `reportId` and `recordIndex`: a row equal to a stored version of its key (key order aside) is skipped; a changed one is appended with `revisionOf`, the sha256 of the canonical JSON (keys sorted, without `revisionOf`) of the latest stored version. Nothing is ever rewritten.
+- `<out>/runs.jsonl` gets one line per run: `start`, `end`, `window`, `fetched`, `added`, `revised`, `status` (`complete` or `failed`), `errorClass` (`network`, `http`, `graphql`, `invalid-response`, `zone-not-found` or `truncated`) and `error` (the API's message). Rows from windows that finished before a failure are kept. Both files are mode 0600.
+- It prints the run line and exits 1 unless `status` is `complete`. The token and row contents are never printed. Run it at least every few weeks so no day ages out.
+
 ## Quick start
 
 Requires [Bun](https://bun.sh) and a Cloudflare account with your domain on it.
