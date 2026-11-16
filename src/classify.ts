@@ -138,6 +138,23 @@ export const BURST_WINDOW_MS = 3 * SECOND;
 
 const SCANNER_UA =
   /bot\b|crawler|spider|curl\/|wget\/|python-requests|python-urllib|go-http-client|java\/|okhttp|headlesschrome|phantomjs|barracuda|proofpoint|mimecast|symantec|forcepoint|trendmicro|safelinks|scanner|preview/iu;
+/**
+ * Chat and social link-preview fetchers, by the platform they serve. The first matching entry
+ * wins, so UAs that embed another fetcher's token come first: iMessage sends
+ * "facebookexternalhit/1.1 Facebot Twitterbot/1.0" and Telegram "TelegramBot (like TwitterBot)".
+ */
+const LINK_PREVIEW_UA: readonly [RegExp, string][] = [
+  [/facebookexternalhit\/[\d.]+ Facebot Twitterbot/iu, "iMessage"],
+  [/applebot/iu, "Apple"],
+  [/telegrambot/iu, "Telegram"],
+  [/slackbot/iu, "Slack"],
+  [/skypeuripreview/iu, "Microsoft Teams"],
+  [/linkedinbot/iu, "LinkedIn"],
+  [/discordbot/iu, "Discord"],
+  [/whatsapp/iu, "WhatsApp"],
+  [/facebookexternalhit/iu, "Facebook"],
+  [/twitterbot/iu, "Twitter"],
+];
 /** Proxies that fetch the image when the recipient opens the email. */
 const ON_OPEN_PROXY_UA =
   /googleimageproxy|ggpht\.com|yahoomailproxy|outlook-imageproxy/iu;
@@ -177,6 +194,12 @@ const SELF_RULES: Rule[] = [
 ];
 
 const SCANNER_RULES: Rule[] = [
+  (h) => {
+    const platform = LINK_PREVIEW_UA.find(([pattern]) =>
+      pattern.test(h.userAgent)
+    );
+    return platform ? hidden(`link preview by ${platform[1]}`) : null;
+  },
   (h) => (h.method === "HEAD" ? hidden("HEAD request") : null),
   (h) => {
     const match = SCANNER_UA.exec(h.userAgent);
@@ -204,7 +227,7 @@ const SCANNER_RULES: Rule[] = [
 
 const PROXY_RULES: Rule[] = [
   (h) => {
-    const match = ON_OPEN_PROXY_UA.exec(h.userAgent);
+    const match = h.kind === "open" ? ON_OPEN_PROXY_UA.exec(h.userAgent) : null;
     return match ? counts(`${ON_OPEN_PREFIX} (${match[0]})`) : null;
   },
   fromNetwork("on-open", (n) =>

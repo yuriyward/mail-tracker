@@ -190,6 +190,54 @@ describe("classification", () => {
     });
   });
 
+  test.each<[string, string]>([
+    ["Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)", "Slack"],
+    [
+      "Mozilla/5.0 (Windows NT 6.1; WOW64) SkypeUriPreview Preview/0.5",
+      "Microsoft Teams",
+    ],
+    [
+      "LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient)",
+      "LinkedIn",
+    ],
+    ["TelegramBot (like TwitterBot)", "Telegram"],
+    ["Mozilla/5.0 (compatible; Discordbot/2.0)", "Discord"],
+    ["WhatsApp/2.23.20.0 A", "WhatsApp"],
+    [
+      "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit)",
+      "Facebook",
+    ],
+    ["Twitterbot/1.0", "Twitter"],
+    [
+      `${BROWSER} Version/9.0 Safari/601 facebookexternalhit/1.1 Facebot Twitterbot/1.0`,
+      "iMessage",
+    ],
+    ["Mozilla/5.0 (Macintosh) Version/17.0 Safari/605 (Applebot/0.1)", "Apple"],
+  ])("link preview %s", (userAgent, platform) => {
+    for (const kind of ["open", "click"] as const) {
+      expect(classify(hit({ kind, userAgent }))).toEqual({
+        class: "scanner",
+        counted: false,
+        reason: `link preview by ${platform}`,
+      });
+    }
+  });
+
+  test("a click with an on-open proxy user agent is not a proxy", () => {
+    expect(classify(hit({ kind: "click", userAgent: GMAIL }))).toEqual({
+      class: "human",
+      counted: true,
+      reason: "browser or mail-client user agent",
+    });
+    expect(
+      classify(hit({ kind: "click", userAgent: "YahooMailProxy/1.0" }))
+    ).toEqual({
+      class: "unknown",
+      counted: false,
+      reason: "no recognised signal",
+    });
+  });
+
   test("self wins over scanner signals", () => {
     const result = classify(
       hit({ ageMs: 0, kind: "click", selfIps: ["198.51.100.7"] })
