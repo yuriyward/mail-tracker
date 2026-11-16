@@ -4,12 +4,14 @@ import { z } from "zod";
 
 import { eventDisplay } from "../classify";
 import { detailDataSchema } from "../dashboard-data";
+import { gmailProxyReason } from "../gmail-proxy";
 import {
   countedOpens,
   listMessages,
   messageDetail,
   recipientActivity,
 } from "../store";
+import { testDb } from "./d1";
 import { createHarness, HOUR, START } from "./harness";
 
 const registration = z.object({
@@ -91,10 +93,13 @@ test.each([false, true])(
 );
 
 test.each([
+  [-31_000, true, [1]],
+  [-30_000, true, [0]],
+  [-7000, true, [0, 0]],
   [31_000, true, [1]],
   [30_000, true, [0]],
   [6000, false, [1]],
-  [6000, true, [0, 1]],
+  [6000, true, [0, 0]],
 ] as const)(
   "first hit +%s sent %s counts %j",
   async (offset, sent, expected) => {
@@ -120,5 +125,71 @@ test.each([
     }
     const detail = await messageDetail(h.env.DB, token);
     expect(detail?.events.map((e) => e.counted)).toEqual([...expected]);
+  }
+);
+
+const serviceReason =
+  "on-open image proxy: IP in the Google service IP list (goog.json minus cloud.json)";
+
+test.each([false, true])(
+  "delayed delivery notice: two earlier fetches, draft tracked %s",
+  async (draftTracked) => {
+    const h = await createHarness();
+    const response = await h.mint(
+      JSON.stringify({
+        draftId: "synthetic-delayed-notice",
+        draftTracked,
+        recipients: ["alex@example.test"],
+      })
+    );
+    const { token, recipients } = registration.parse(await response.json());
+    // Synthetic stored classification from a Google-service IP and desktop client.
+    h.state.clock = START + HOUR - 7000;
+    await h.hit(recipients[0]?.imageUrl, headers);
+    await h.env.DB.prepare(
+      "UPDATE events SET reason = ?, user_agent = ? WHERE message_token = ?"
+    )
+      .bind(serviceReason, "Mozilla/5.0 SyntheticDesktop Edge/12.0", token)
+      .run();
+    h.state.clock = START + HOUR - 2000;
+    await h.hit(recipients[0]?.imageUrl, headers);
+    h.state.clock = START + HOUR;
+    await h.markSent(token, h.state.clock);
+    const detail = await messageDetail(h.env.DB, token);
+    expect(
+      detail?.events.map((e) => [eventDisplay(e).label, e.counted])
+    ).toEqual([
+      [draftTracked ? "Draft preview" : "Prefetch by Gmail", 0],
+      [draftTracked ? "Draft preview" : "Prefetch by Gmail", 0],
+    ]);
+    const summaries = await listMessages(h.env.DB, 10);
+    expect(summaries[0]).toMatchObject({ first_open: null, opens: 0 });
+    expect(await countedOpens(h.env.DB)).toEqual([]);
+    expect(h.events().every((e) => e.counted === 1)).toBe(true);
+  }
+);
+
+test.each([
+  [serviceReason, true],
+  ["on-open image proxy (GoogleImageProxy)", true],
+  ["on-open image proxy (GGPHT.COM)", true],
+  ["on-open image proxy (Google)", true],
+  ["on-open image proxy (GoogleCloud)", false],
+  ["on-open image proxy (_Google_)", false],
+  ["on-open image proxy (YahooMailProxy)", false],
+] as const)(
+  "Gmail reason agrees in display and SQL: %s",
+  async (reason, expected) => {
+    const db = testDb();
+    const row = await db
+      .prepare(
+        `SELECT ${gmailProxyReason.sql("reason")} AS matches FROM (SELECT ? AS reason)`
+      )
+      .bind(reason)
+      .first();
+    expect(row?.matches).toBe(expected ? 1 : 0);
+    expect(
+      eventDisplay({ class: "proxy", kind: "open", reason }).via === "Gmail"
+    ).toBe(expected);
   }
 );

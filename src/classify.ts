@@ -1,3 +1,4 @@
+import { gmailProxyReason } from "./gmail-proxy";
 import { publishedNetworkLookup } from "./networks";
 import type {
   NetworkLookup,
@@ -43,7 +44,6 @@ const ON_OPEN_PREFIX = "on-open image proxy";
 
 /** The mail client behind an on-open proxy, from the stored reason. */
 const PROXY_CLIENTS: readonly [RegExp, string][] = [
-  [/googleimageproxy|ggpht\.com|\bGoogle\b/iu, "Gmail"],
   [/yahoomailproxy/iu, "Yahoo Mail"],
   [/outlook-imageproxy/iu, "Outlook"],
 ];
@@ -76,11 +76,11 @@ export const eventDisplay = (e: {
   if (e.preview === 1) {
     return { label: "Draft preview", via: null };
   }
-  if (e.gmail_self === 1) {
-    return { label: "You (Gmail)", via: null };
-  }
   if (e.gmail_prefetch === 1) {
     return { label: "Prefetch by Gmail", via: null };
+  }
+  if (e.gmail_self === 1) {
+    return { label: "You (Gmail)", via: null };
   }
   const action: EventLabel = e.kind === "open" ? "Opened" : "Clicked";
   if (e.class === "human") {
@@ -91,6 +91,9 @@ export const eventDisplay = (e: {
   }
   if (!e.reason.startsWith(ON_OPEN_PREFIX)) {
     return { label: "Prefetch", via: null };
+  }
+  if (gmailProxyReason.matches(e.reason)) {
+    return { label: action, via: "Gmail" };
   }
   const client = PROXY_CLIENTS.find(([pattern]) => pattern.test(e.reason));
   return { label: action, via: client ? client[1] : "image proxy" };
