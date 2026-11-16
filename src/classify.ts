@@ -200,6 +200,11 @@ const SCANNER_RULES: Rule[] = [
     );
     return platform ? hidden(`link preview by ${platform[1]}`) : null;
   },
+  // An image proxy does not follow links, so a click under its user agent is automation.
+  (h) =>
+    h.kind === "click" && ON_OPEN_PROXY_UA.test(h.userAgent)
+      ? hidden("click with an image-proxy user agent (automated)")
+      : null,
   (h) => (h.method === "HEAD" ? hidden("HEAD request") : null),
   (h) => {
     const match = SCANNER_UA.exec(h.userAgent);

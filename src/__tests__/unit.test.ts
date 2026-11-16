@@ -223,18 +223,15 @@ describe("classification", () => {
     }
   });
 
-  test("a click with an on-open proxy user agent is not a proxy", () => {
-    expect(classify(hit({ kind: "click", userAgent: GMAIL }))).toEqual({
-      class: "human",
-      counted: true,
-      reason: "browser or mail-client user agent",
-    });
-    expect(
-      classify(hit({ kind: "click", userAgent: "YahooMailProxy/1.0" }))
-    ).toEqual({
-      class: "unknown",
+  test.each([
+    GMAIL,
+    "Mozilla/5.0 (compatible; YahooMailProxy; https://help.yahoo.com)",
+    "Mozilla/5.0 (Windows NT 10.0) Outlook-ImageProxy/1.0",
+  ])("a click with image-proxy UA %s is automation", (userAgent) => {
+    expect(classify(hit({ kind: "click", userAgent }))).toEqual({
+      class: "scanner",
       counted: false,
-      reason: "no recognised signal",
+      reason: "click with an image-proxy user agent (automated)",
     });
   });
 
