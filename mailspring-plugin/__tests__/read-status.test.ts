@@ -305,6 +305,8 @@ test("clean agent Sent copy resolves Message-ID with shared cache, expiry and cl
   const f = await createFixture();
   const { token } = await f.h.mintOk();
   const id = "<Agent+sent/1@example.test>";
+  // Mailspring's headerMessageId carries no angle brackets.
+  const header = "Agent+sent/1@example.test";
   await f.h.call(`/api/messages/${token}/sent`, {
     body: JSON.stringify({ messageId: id }),
     headers: { Authorization: `Bearer ${f.state.settings.apiToken}` },
@@ -328,7 +330,7 @@ test("clean agent Sent copy resolves Message-ID with shared cache, expiry and cl
   const sent = draft({
     categories: () => [{ role: "sent" }],
     draft: false,
-    headerMessageId: id,
+    headerMessageId: header,
   });
   delete sent.body;
   const details = await Promise.all([client.read(sent), client.read(sent)]);

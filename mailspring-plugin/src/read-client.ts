@@ -77,6 +77,9 @@ export const bodyToken = (body: string, origin: string): string | null => {
 };
 
 /** Each endpoint caches successes and failures, coalescing concurrent requests. */
+// Mailspring keeps headerMessageId without the angle brackets the tracker stores (live, 2026-11-17).
+const bracketed = (id: string): string => (id.startsWith("<") ? id : `<${id}>`);
+
 export const createReadClient = (options: {
   settings: () => Settings;
   config: ConfigStore;
@@ -137,7 +140,7 @@ export const createReadClient = (options: {
         .object({ token: z.string() })
         .safeParse(
           await get(
-            `messages/by-message-id/${encodeURIComponent(message.headerMessageId)}`
+            `messages/by-message-id/${encodeURIComponent(bracketed(message.headerMessageId))}`
           )
         );
       return found.success ? found.data.token : null;
