@@ -47,6 +47,7 @@ export interface ReadMessage {
   draft: boolean;
   body?: string;
   categories?: () => { role: string }[];
+  isFromMe?: () => boolean;
 }
 
 /** Only our origin and top-level markup: never resolve a quoted correspondent's tracker. */
@@ -122,8 +123,12 @@ export const createReadClient = (options: {
   };
   const resolveBody = async (message: ReadMessage): Promise<string | null> => {
     if (
-      message.categories?.().some((category) => category.role === "sent") !==
-      true
+      // On Gmail "Sent" is a label and messages live in All Mail, so a folder check alone misses them.
+      !(
+        message.isFromMe?.() === true ||
+        message.categories?.().some((category) => category.role === "sent") ===
+          true
+      )
     ) {
       return null;
     }

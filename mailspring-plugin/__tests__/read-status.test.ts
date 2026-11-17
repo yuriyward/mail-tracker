@@ -392,3 +392,37 @@ test.each(["http", "network", "json", "schema"])(
     expect(calls).toBe(1);
   }
 );
+
+test("a Gmail Sent message (All Mail folder, sent by the owner) resolves by Message-ID", async () => {
+  const f = await createFixture();
+  const { token } = await f.h.mintOk();
+  await f.h.call(`/api/messages/${token}/sent`, {
+    body: JSON.stringify({ messageId: "<gmail-sent@example.test>" }),
+    headers: { Authorization: `Bearer ${f.state.settings.apiToken}` },
+    method: "POST",
+  });
+  const client = createReadClient({
+    config: f.config,
+    loadBody: async () => await Promise.resolve("<p>Clean copy</p>"),
+    now: () => 0,
+    settings: () => ({ ...f.state.settings, readToken: READ_TOKEN }),
+    transport: async (call) => {
+      const response = await f.h.call(new URL(call.url).pathname, {
+        headers: { Authorization: `Bearer ${call.token}` },
+      });
+      return { body: await response.text(), status: response.status };
+    },
+  });
+  const sent = draft({
+    categories: () => [{ role: "all" }],
+    draft: false,
+    headerMessageId: "gmail-sent@example.test",
+    isFromMe: () => true,
+  });
+  delete sent.body;
+  const detail = await client.read(sent);
+  expect(detail?.message.token).toBe(token);
+  expect(
+    await client.read(Object.assign(sent, { isFromMe: () => false }))
+  ).toBeNull();
+});

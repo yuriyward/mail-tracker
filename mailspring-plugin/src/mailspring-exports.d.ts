@@ -14,6 +14,7 @@ declare module "mailspring-exports" {
     id?: string;
     static attributes: { body: { modelKey: string } };
     categories?: () => { role: string }[];
+    isFromMe?: () => boolean;
     headerMessageId: string;
     accountId: string;
     draft: boolean;
