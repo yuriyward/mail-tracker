@@ -73,3 +73,7 @@ Owner decision 2026-11-12 (split send through Fastmail, design v3): one email pe
 
 - reported: owner design, approved 2026-11-11 (ward-assistant chat).
 - measured: tested in `src/cli/__tests__/compose.test.ts` (one and several recipients, `--no-track`, autolink, template slot), `src/cli/__tests__/sync-sent.test.ts` (matching by image, quoted images, re-runs), `src/__tests__/draft-preview.test.ts` (labelling, counting, later `sent_at`, forwarding baseline) and `mailspring-plugin/__tests__/pretracked.test.ts` (a pre-tracked draft through the stand-in caller of `send-draft-task.ts`), all against the in-memory Worker.
+
+## Note 2026-11-17: link clean agent Sent copies by Message-ID
+
+Owner approved (chat "так"): the external sender can include the bracketed RFC 5322 `messageId` with `sentAt` when marking the receipt token sent. The Worker stores it immutably and exposes an exact, case-sensitive read-token lookup returning the message token. The plugin uses `headerMessageId` for Sent messages with neither a local registration nor a tracker URL, through its existing read cache; failures show nothing. This links a clean Sent copy without mailbox access or sending mail from this repository.

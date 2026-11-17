@@ -133,7 +133,14 @@ export const createReadClient = (options: {
       origin
     );
     if (carried === null) {
-      return null;
+      const found = z
+        .object({ token: z.string() })
+        .safeParse(
+          await get(
+            `messages/by-message-id/${encodeURIComponent(message.headerMessageId)}`
+          )
+        );
+      return found.success ? found.data.token : null;
     }
     const target = z
       .object({ message: z.string() })

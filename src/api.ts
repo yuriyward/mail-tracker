@@ -14,6 +14,7 @@ import { mintRequest, sentRequest } from "./schema";
 import type { MintRequest } from "./schema";
 import {
   markSent,
+  messageByMessageId,
   pixelOwner,
   registerMessage,
   tokenSetLinks,
@@ -228,18 +229,29 @@ export const apiRoutes = (
     const token = c.req.param("token");
     const body = sentRequest.safeParse(await c.req.json().catch(() => ({})));
     if (!body.success) {
-      return c.json(
-        { error: "sentAt must be an integer (ms since epoch)" },
-        400
-      );
+      return c.json({ error: "invalid sentAt or messageId" }, 400);
     }
     const found =
       isToken(token) &&
       (await markSent(c.env.DB, token, {
+        messageId: body.data.messageId,
         now: now(),
         reported: body.data.sentAt ?? null,
       }));
-    return found ? c.body(null, 204) : c.json({ error: "not found" }, 404);
+    if (found === "conflict") {
+      return c.json({ error: "messageId is immutable" }, 409);
+    }
+    if (!found) {
+      return c.json({ error: "not found" }, 404);
+    }
+    return body.data.messageId === undefined
+      ? c.body(null, 204)
+      : c.json({ token });
+  });
+
+  app.get("/messages/by-message-id/:id", readAuth, async (c) => {
+    const found = await messageByMessageId(c.env.DB, c.req.param("id"));
+    return found ? c.json(found) : c.json({ error: "not found" }, 404);
   });
 
   /**

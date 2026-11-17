@@ -277,19 +277,27 @@ const SKEW_MS = 5 * 60 * 1000;
 export const markSent = async (
   db: Db,
   token: string,
-  sent: { reported: number | null; now: number }
-): Promise<boolean> => {
+  sent: { reported: number | null; now: number; messageId?: string | undefined }
+): Promise<boolean | "conflict"> => {
   const row = await one(
     db
       .prepare(
         `UPDATE messages SET sent_at = COALESCE(sent_at,
-           CASE WHEN ?1 IS NOT NULL AND ?1 >= created_at AND ?1 <= ?2 + ?3 THEN ?1 ELSE ?2 END)
-         WHERE token = ?4 RETURNING token`
+           CASE WHEN ?1 IS NOT NULL AND ?1 >= created_at AND ?1 <= ?2 + ?3 THEN ?1 ELSE ?2 END),
+           message_id = COALESCE(message_id, ?5)
+         WHERE token = ?4 AND (?5 IS NULL OR message_id IS NULL OR message_id = ?5) RETURNING token`
       )
-      .bind(sent.reported, sent.now, SKEW_MS, token),
+      .bind(sent.reported, sent.now, SKEW_MS, token, sent.messageId ?? null),
     messageRow.pick({ token: true })
   );
-  return row !== null;
+  if (row) {
+    return true;
+  }
+  const existing = await one(
+    db.prepare("SELECT token FROM messages WHERE token = ?").bind(token),
+    messageRow.pick({ token: true })
+  );
+  return existing ? "conflict" : false;
 };
 
 const findMessage = async (db: Db, token: string): Promise<MessageRow | null> =>
@@ -674,4 +682,16 @@ export const tokenTarget = async (
       )
       .bind(token),
     tokenTargetRow
+  );
+
+/** Exact, case-sensitive RFC Message-ID lookup for clean Sent copies. */
+export const messageByMessageId = async (
+  db: Db,
+  id: string
+): Promise<{ token: string } | null> =>
+  await one(
+    db
+      .prepare("SELECT token FROM messages WHERE message_id = ? COLLATE BINARY")
+      .bind(id),
+    messageRow.pick({ token: true })
   );

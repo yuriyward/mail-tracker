@@ -7,6 +7,7 @@ export const messageRow = z.object({
   draft_id: z.string(),
   /** 1 when the draft itself carries tracking (composed by an agent, ADR-0004). */
   draft_tracked: z.number(),
+  message_id: z.string().nullable(),
   recipient: z.string(),
   sent_at: z.number().nullable(),
   /** 1 when the account sends one body to every recipient (Microsoft Graph). */
@@ -146,7 +147,14 @@ export const mintRequest = z.object({
 export type MintRequest = z.infer<typeof mintRequest>;
 
 /** The body of POST /api/messages/:token/sent: when Mailspring reported delivery. */
-export const sentRequest = z.object({ sentAt: z.number().int().optional() });
+export const rfcMessageId = z
+  .string()
+  .max(998)
+  .regex(/^<[^<>\s\p{Cc}]+@[^<>\s\p{Cc}]+>$/u);
+export const sentRequest = z.object({
+  messageId: rfcMessageId.optional(),
+  sentAt: z.number().int().optional(),
+});
 
 /** One token set of a known address on a listed email, with its figures (the people view). */
 export const recipientActivityRow = z.object({

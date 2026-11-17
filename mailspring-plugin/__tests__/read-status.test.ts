@@ -300,3 +300,93 @@ test("components render unopened, opened, shared copy, server labels and clicked
   root.unmount();
   host.remove();
 });
+
+test("clean agent Sent copy resolves Message-ID with shared cache, expiry and clear", async () => {
+  const f = await createFixture();
+  const { token } = await f.h.mintOk();
+  const id = "<Agent+sent/1@example.test>";
+  await f.h.call(`/api/messages/${token}/sent`, {
+    body: JSON.stringify({ messageId: id }),
+    headers: { Authorization: `Bearer ${f.state.settings.apiToken}` },
+    method: "POST",
+  });
+  const paths: string[] = [];
+  let clock = 0;
+  const client = createReadClient({
+    config: f.config,
+    loadBody: async () => await Promise.resolve("<p>Clean copy</p>"),
+    now: () => clock,
+    settings: () => ({ ...f.state.settings, readToken: READ_TOKEN }),
+    transport: async (call) => {
+      paths.push(new URL(call.url).pathname);
+      const response = await f.h.call(new URL(call.url).pathname, {
+        headers: { Authorization: `Bearer ${call.token}` },
+      });
+      return { body: await response.text(), status: response.status };
+    },
+  });
+  const sent = draft({
+    categories: () => [{ role: "sent" }],
+    draft: false,
+    headerMessageId: id,
+  });
+  delete sent.body;
+  const details = await Promise.all([client.read(sent), client.read(sent)]);
+  expect(details.map((detail) => detail?.message.token)).toEqual([
+    token,
+    token,
+  ]);
+  expect(paths).toEqual([
+    `/api/messages/by-message-id/${encodeURIComponent(id)}`,
+    `/api/messages/${token}`,
+  ]);
+  clock = 59_999;
+  await client.read(sent);
+  expect(paths).toHaveLength(2);
+  clock = 60_000;
+  await client.read(sent);
+  expect(paths).toHaveLength(4);
+  client.clear();
+  await client.read(sent);
+  expect(paths).toHaveLength(6);
+  expect(
+    await client.read(
+      Object.assign(sent, { categories: () => [{ role: "inbox" }] })
+    )
+  ).toBeNull();
+  expect(await client.read(Object.assign(sent, { draft: true }))).toBeNull();
+  expect(paths).toHaveLength(6);
+});
+
+test.each(["http", "network", "json", "schema"])(
+  "Message-ID %s failure shows nothing and is cached",
+  async (failure) => {
+    const f = await createFixture();
+    let calls = 0;
+    const client = createReadClient({
+      config: f.config,
+      loadBody: async () => await Promise.resolve(""),
+      now: () => 0,
+      settings: () => ({ ...f.state.settings, readToken: READ_TOKEN }),
+      transport: async () => {
+        calls += 1;
+        if (failure === "network") {
+          throw new Error("synthetic offline");
+        }
+        return await Promise.resolve({
+          body: failure === "json" ? "{" : "{}",
+          status: failure === "http" ? 404 : 200,
+        });
+      },
+    });
+    const sent = draft({
+      body: "",
+      categories: () => [{ role: "sent" }],
+      draft: false,
+      headerMessageId: "<missing@example.test>",
+    });
+    expect(await client.read(sent)).toBeNull();
+    expect(await client.read(sent)).toBeNull();
+    expect(calls).toBe(1);
+  }
+);
